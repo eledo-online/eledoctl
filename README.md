@@ -9,15 +9,6 @@ It contains two Python modules:
 
 The project is MIT licensed and designed for both public developer workflows and internal Eledo operational tooling.
 
-## Goals
-
-- provide a clean CLI for Eledo API workflows
-- support PDF generation from command line
-- provide reusable async Python API client
-- support internal Git-to-CMS documentation synchronization
-- preserve clean Git documentation repositories
-- enable GitHub Actions automation
-
 ## Architecture
 
 ```text
@@ -30,25 +21,27 @@ repo/
     └── eledoctl/
 ```
 
-`pyeledo` is async-first and async-only. A synchronous API may be added later only if a real requirement appears and its maintenance is explicitly justified.
+`pyeledo` is async-first and async-only. It never stores credentials. Tokens are passed to the client by the caller.
 
-## Initial commands
+```python
+from pyeledo import EledoClient, TemplateScope
 
-Planned public commands:
-
-```bash
-eledoctl auth login
-eledoctl templates list
-eledoctl pdf generate
+async with EledoClient(token="...") as client:
+    profile = await client.get_profile()
+    templates = await client.get_templates(scope=TemplateScope.PRIVATE)
 ```
 
-Planned internal commands:
+## Initial CLI tree
 
 ```bash
+eledoctl profile
+eledoctl templates list
+eledoctl templates schema TEMPLATE_ID
+eledoctl pdf generate TEMPLATE_ID --payload payload.json --output output.pdf
 eledoctl internal docs sync docs
 ```
 
-The `internal` namespace is not a security mechanism. All authorization must be enforced by the Eledo backend.
+For now the CLI passes an empty token unless `--token` is provided. Persistent token storage will be added later in `eledoctl`, not in `pyeledo`.
 
 ## Development
 

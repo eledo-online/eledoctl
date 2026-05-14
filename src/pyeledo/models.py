@@ -82,14 +82,33 @@ class GeneratedPdf:
     filename: str = "document.pdf"
     mime_type: str = "application/pdf"
 
+    def as_bytes(self) -> bytes:
+        """Return the raw PDF bytes.
+
+        Raw bytes are the primary representation because the Eledo Generate
+        endpoint returns binary PDF data on success.
+        """
+        return self.content
+
     def as_base64(self) -> str:
         """Return the PDF content as a base64-encoded string."""
         return base64.b64encode(self.content).decode("ascii")
 
-    def as_base64_payload(self) -> JsonObject:
-        """Return a JSON-serializable payload with metadata and base64 content."""
+    def as_json(self) -> JsonObject:
+        """Return a JSON-serializable payload with metadata and base64 content.
+
+        This is a presentation helper for CLI/integration layers. It does not
+        change the primary in-memory representation, which remains raw bytes.
+        """
         return {
             "filename": self.filename,
             "mimeType": self.mime_type,
             "data": self.as_base64(),
         }
+
+    def as_base64_payload(self) -> JsonObject:
+        """Return JSON metadata with base64 content.
+
+        Backwards-compatible alias for :meth:`as_json`.
+        """
+        return self.as_json()

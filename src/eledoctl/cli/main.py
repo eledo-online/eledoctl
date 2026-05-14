@@ -192,7 +192,7 @@ async def _generate_pdf(
         )
 
     if base64_json:
-        click.echo(json.dumps(result.as_base64_payload(), indent=2))
+        click.echo(json.dumps(result.as_json(), indent=2))
         return
 
     destination = output_path or Path(result.filename)

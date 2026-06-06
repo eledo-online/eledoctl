@@ -4,10 +4,10 @@
 
 It contains two Python modules:
 
-- `pyeledo` — async-native Python API client for Eledo REST APIs
-- `eledoctl` — CLI, REPL, and automation layer built on top of `pyeledo`
+* `pyeledo` — async-native Python API client for Eledo REST APIs
+* `eledoctl` — CLI, REPL, and automation layer built on top of `pyeledo`
 
-The project is MIT licensed and designed for both public developer workflows and internal Eledo operational tooling.
+The project is MIT licensed. Public functionality is exposed through `pyeledo` and `eledoctl`, while internal Eledo tooling is implemented as optional extensions.
 
 ## Architecture
 
@@ -31,7 +31,7 @@ async with EledoClient(token="...") as client:
     templates = await client.get_templates(scope=TemplateScope.PRIVATE)
 ```
 
-## Initial CLI tree
+## Initial CLI Tree
 
 ```bash
 eledoctl profile
@@ -43,18 +43,57 @@ eledoctl internal docs sync docs
 
 For now the CLI passes an empty token unless `--token` is provided. Persistent token storage will be added later in `eledoctl`, not in `pyeledo`.
 
-## Development
+## Installation
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-pytest
+pip install eledoctl
 ```
 
-Format and lint:
+## Development
+
+The project uses modern Python tooling based on `uv`.
+
+### Create or update the development environment
 
 ```bash
-black src tests
-ruff check src tests
+uv sync --group dev
+```
+
+### Run the test suite
+
+```bash
+uv run pytest
+```
+
+### Run the CLI
+
+```bash
+uv run eledoctl --help
+```
+
+### Format the code
+
+```bash
+uv run ruff format .
+```
+
+### Run linting
+
+```bash
+uv run ruff check .
+```
+
+### Run type checking
+
+```bash
+uv run mypy src
+```
+
+### Full validation
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run mypy src
+uv run pytest
 ```

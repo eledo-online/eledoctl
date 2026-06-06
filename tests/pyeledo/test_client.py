@@ -37,9 +37,7 @@ async def test_client_sends_api_key_header(mock_transport, json_response) -> Non
 async def test_json_error_raises_api_error(mock_transport) -> None:
     import httpx
 
-    transport = mock_transport(
-        lambda request: httpx.Response(404, json={"error": "Template not found."})
-    )
+    transport = mock_transport(lambda request: httpx.Response(404, json={"error": "Template not found."}))
 
     async with EledoClient(transport=transport) as client:
         with pytest.raises(EledoApiError, match="Template not found"):

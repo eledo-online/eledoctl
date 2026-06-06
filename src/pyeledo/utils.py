@@ -60,7 +60,7 @@ def parse_json_object(text: str) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         raise EledoInvalidResponseError("Invalid JSON payload.") from exc
     if not isinstance(parsed, dict):
-        raise EledoInvalidResponseError('JSON payload must be an object.')
+        raise EledoInvalidResponseError("JSON payload must be an object.")
     return parsed
 
 

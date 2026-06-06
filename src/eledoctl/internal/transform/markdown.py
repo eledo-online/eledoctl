@@ -35,5 +35,5 @@ def parse_git_document(text: str) -> GitDocument:
         if not line.strip() or ":" not in line:
             continue
         key, value = line.split(":", 1)
-        frontmatter[key.strip()] = value.strip().strip('"\'')
+        frontmatter[key.strip()] = value.strip().strip("\"'")
     return GitDocument(frontmatter=frontmatter, content=body.strip())

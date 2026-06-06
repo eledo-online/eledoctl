@@ -210,9 +210,7 @@ class EledoClient:
                     if isinstance(raw_template.get("thumbnailUrl"), str)
                     else None,
                     type=raw_template.get("type") if isinstance(raw_template.get("type"), int) else None,
-                    version=raw_template.get("version")
-                    if isinstance(raw_template.get("version"), int)
-                    else None,
+                    version=raw_template.get("version") if isinstance(raw_template.get("version"), int) else None,
                     bulk=raw_template.get("bulk") if isinstance(raw_template.get("bulk"), bool) else None,
                 )
             )

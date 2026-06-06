@@ -9,7 +9,8 @@ from typing import Any
 
 import click
 
-from pyeledo import EledoClient, PrimitiveType, TemplateScope, pick_primitive_fields
+from pyeledo import EledoClient, TemplateScope, pick_primitive_fields
+from pyeledo.types import JsonValue
 from pyeledo.utils import parse_json_object
 
 DEFAULT_BASE_URL = "https://eledo.online"
@@ -113,6 +114,9 @@ async def _get_schema(
 ) -> None:
     async with EledoClient(base_url=base_url, token=token) as client:
         result = await client.get_schema(template_id, template_version=template_version)
+
+    payload: JsonValue
+
     if primitive_fields:
         fields = pick_primitive_fields(result)
         payload = [{"key": field.key, "type": field.type.value} for field in fields]

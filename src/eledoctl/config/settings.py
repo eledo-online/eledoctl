@@ -8,6 +8,8 @@ from typing import Any
 
 from platformdirs import user_config_dir
 
+from pyeledo.types import JsonObject, JsonValue
+
 APP_NAME = "eledoctl"
 CONFIG_FILE = "config.json"
 
@@ -24,12 +26,19 @@ def config_path() -> Path:
     return config_dir() / CONFIG_FILE
 
 
-def load_config() -> dict[str, Any]:
+def load_config() -> JsonObject:
     """Load local configuration."""
     path = config_path()
+
     if not path.exists():
         return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+
+    data: JsonValue = json.loads(path.read_text(encoding="utf-8"))
+
+    if not isinstance(data, dict):
+        raise ValueError("Configuration root must be a JSON object")
+
+    return data
 
 
 def save_config(config: dict[str, Any]) -> None:

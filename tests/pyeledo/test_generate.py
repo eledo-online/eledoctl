@@ -19,7 +19,7 @@ async def test_generate_pdf_sends_minimal_payload_with_file_null(mock_transport)
             content=b"%PDF fake",
             headers={
                 "content-type": "application/pdf",
-                "content-disposition": 'attachment; filename="0_0.pdf"; filename*=UTF-8''0_0.pdf',
+                "content-disposition": 'attachment; filename="0_0.pdf"; filename*=UTF-80_0.pdf',
             },
         )
 
@@ -49,9 +49,7 @@ async def test_generate_pdf_includes_template_version_and_file_data(mock_transpo
             file_data={"Name": "ACME"},
         )
 
-    assert seen_body == (
-        b'{"templateId":"template-id","file":{"Name":"ACME"},"templateVersion":2}'
-    )
+    assert seen_body == (b'{"templateId":"template-id","file":{"Name":"ACME"},"templateVersion":2}')
 
 
 @pytest.mark.asyncio

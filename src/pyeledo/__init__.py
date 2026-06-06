@@ -7,17 +7,10 @@ from pyeledo.exceptions import (
     EledoError,
     EledoInvalidResponseError,
 )
-from pyeledo.models import (
-    EledoSchema,
-    GeneratedPdf,
-    PrimitiveField,
-    PrimitiveType,
-    Profile,
-    Template,
-    TemplateList,
-    TemplateScope,
-)
-from pyeledo.schema import pick_primitive_fields
+from pyeledo.generate import GeneratedPdf
+from pyeledo.profile import Profile
+from pyeledo.schema import PrimitiveField, PrimitiveType, pick_primitive_fields
+from pyeledo.templates import Template, TemplateList, TemplateScope
 
 __all__ = [
     "EledoClient",
@@ -25,7 +18,6 @@ __all__ = [
     "EledoApiError",
     "EledoAuthenticationError",
     "EledoInvalidResponseError",
-    "EledoSchema",
     "GeneratedPdf",
     "PrimitiveField",
     "PrimitiveType",

@@ -121,7 +121,7 @@ async def _get_schema(
         fields = pick_primitive_fields(result)
         payload = [{"key": field.key, "type": field.type.value} for field in fields]
     else:
-        payload = {"schema": result.schema}
+        payload = {"schema": result}
     click.echo(json.dumps(payload, indent=2))
 
 

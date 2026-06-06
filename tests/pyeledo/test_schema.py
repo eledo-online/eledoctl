@@ -1,7 +1,6 @@
 import pytest
 
 from pyeledo import EledoClient, PrimitiveField, PrimitiveType, pick_primitive_fields
-from pyeledo.models import EledoSchema
 
 
 @pytest.mark.asyncio
@@ -22,7 +21,7 @@ async def test_get_schema_without_version_requests_latest_schema(mock_transport)
         schema = await client.get_schema("template-id")
 
     assert seen_path == "/api/RESTv1/Schema/template-id"
-    assert schema.schema["properties"]["Name"]["type"] == "String"
+    assert schema["properties"]["Name"]["type"] == "String"
 
 
 @pytest.mark.asyncio
@@ -51,17 +50,15 @@ async def test_get_schema_rejects_non_positive_version() -> None:
 
 
 def test_pick_primitive_fields_returns_only_top_level_primitives() -> None:
-    schema = EledoSchema(
-        schema={
-            "type": "object",
-            "properties": {
-                "text": {"type": "String"},
-                "number": {"type": "Number"},
-                "person": {"type": "object", "properties": {"name": {"type": "String"}}},
-                "items": {"type": "array", "items": {"Name": {"type": "String"}}},
-            },
-        }
-    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "text": {"type": "String"},
+            "number": {"type": "Number"},
+            "person": {"type": "object", "properties": {"name": {"type": "String"}}},
+            "items": {"type": "array", "items": {"Name": {"type": "String"}}},
+        },
+    }
 
     fields = pick_primitive_fields(schema)
 

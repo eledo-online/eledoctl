@@ -10,6 +10,7 @@ import click
 from eledoctl.cli.common import require_connection_settings, run
 from eledoctl.config.settings import ConnectionSettings
 from pyeledo import EledoClient
+from pyeledo.types import JsonObject
 from pyeledo.utils import parse_json_object
 
 
@@ -23,10 +24,20 @@ def documents_group() -> None:
 @click.option("--template-version", type=int, default=None, help="Optional template version.")
 @click.option(
     "--payload",
-    "payload_path",
+    type=str,
+    default=None,
+    help='Inline JSON containing the Eledo "file" object.',
+)
+@click.option(
+    "--payload-file",
     type=click.Path(path_type=Path, exists=True, dir_okay=False),
     default=None,
-    help='JSON file containing the content of the Eledo "file" object.',
+    help='Read the Eledo "file" object from a JSON file.',
+)
+@click.option(
+    "--payload-stdin",
+    is_flag=True,
+    help='Read the Eledo "file" object from standard input.',
 )
 @click.option(
     "--output",
@@ -39,7 +50,9 @@ def documents_group() -> None:
 def generate_pdf(
     template_id: str,
     template_version: int | None,
-    payload_path: Path | None,
+    payload: str | None,
+    payload_file: Path | None,
+    payload_stdin: bool,
     output_path: Path | None,
     base64_json: bool,
 ) -> None:
@@ -50,7 +63,7 @@ def generate_pdf(
             template_id=template_id,
             settings=settings,
             template_version=template_version,
-            payload_path=payload_path,
+            file_data=_resolve_payload(payload=payload, payload_file=payload_file, payload_stdin=payload_stdin),
             output_path=output_path,
             base64_json=base64_json,
         )
@@ -62,16 +75,10 @@ async def _generate_pdf(
     template_id: str,
     settings: ConnectionSettings,
     template_version: int | None,
-    payload_path: Path | None,
+    file_data: JsonObject | None,
     output_path: Path | None,
     base64_json: bool,
 ) -> None:
-    file_data = None
-
-    if payload_path is not None:
-        parsed = parse_json_object(payload_path.read_text(encoding="utf-8"))
-        file_data = parsed or None
-
     async with EledoClient(base_url=settings.base_url, token=settings.token) as client:
         result = await client.generate_pdf(
             template_id=template_id,
@@ -86,3 +93,34 @@ async def _generate_pdf(
     destination = output_path or Path(result.filename)
     destination.write_bytes(result.content)
     click.echo(str(destination))
+
+def _resolve_payload(
+    *,
+    payload: str | None,
+    payload_file: Path | None,
+    payload_stdin: bool,
+) -> JsonObject | None:
+    """Read and parse document data from one configured input source."""
+    source_count = sum(
+        (
+            payload is not None,
+            payload_file is not None,
+            payload_stdin,
+        )
+    )
+
+    if source_count > 1:
+        raise click.ClickException(
+            "Use only one of --payload, --payload-file, or --payload-stdin."
+        )
+
+    if payload is not None:
+        parsed = parse_json_object(payload)
+    elif payload_file is not None:
+        parsed = parse_json_object(payload_file.read_text(encoding="utf-8"))
+    elif payload_stdin:
+        parsed = parse_json_object(click.get_text_stream("stdin").read())
+    else:
+        return None
+
+    return parsed or None

@@ -1,4 +1,10 @@
 # eledoctl
+[![CI](https://github.com/eledo-online/eledoctl/actions/workflows/ci.yml/badge.svg)](https://github.com/eledo-online/eledoctl/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/eledo-online/eledoctl/graph/badge.svg?token=IVVXIPSQHM)](https://codecov.io/gh/eledo-online/eledoctl)
+[![Release](https://img.shields.io/github/v/release/eledo-online/eledoctl)](https://github.com/eledo-online/eledoctl/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Eledo](https://img.shields.io/badge/Eledo-green.svg)](https://eledo.online/)
+![Eledo PDF automation overview](https://github.com/user-attachments/assets/31ee16e8-7a60-4989-8a73-cf2c3097cfa4)
 
 `eledoctl` is an open-source command-line toolkit for Eledo.
 

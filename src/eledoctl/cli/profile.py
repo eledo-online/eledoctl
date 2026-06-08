@@ -6,20 +6,20 @@ import json
 
 import click
 
-from eledoctl.cli.common import DEFAULT_BASE_URL, run
+from eledoctl.cli.common import require_connection_settings, run
+from eledoctl.config.settings import ConnectionSettings
 from pyeledo import EledoClient
 
 
 @click.command("profile")
-@click.option("--base-url", default=DEFAULT_BASE_URL, show_default=True, help="Eledo base URL.")
-@click.option("--token", default="", help="Eledo API token. Temporary explicit input.")
-def profile(base_url: str, token: str) -> None:
+def profile() -> None:
     """Fetch current Eledo profile."""
-    run(_profile(base_url=base_url, token=token))
+    settings = require_connection_settings()
+    run(_profile(settings=settings))
 
 
-async def _profile(*, base_url: str, token: str) -> None:
-    async with EledoClient(base_url=base_url, token=token) as client:
+async def _profile(*, settings: ConnectionSettings) -> None:
+    async with EledoClient(base_url=settings.base_url, token=settings.token) as client:
         result = await client.get_profile()
 
     click.echo(json.dumps({"account": result.account}, indent=2))

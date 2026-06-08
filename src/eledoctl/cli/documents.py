@@ -7,7 +7,8 @@ from pathlib import Path
 
 import click
 
-from eledoctl.cli.common import DEFAULT_BASE_URL, run
+from eledoctl.cli.common import require_connection_settings, run
+from eledoctl.config.settings import ConnectionSettings
 from pyeledo import EledoClient
 from pyeledo.utils import parse_json_object
 
@@ -19,8 +20,6 @@ def documents_group() -> None:
 
 @documents_group.command("generate")
 @click.argument("template_id")
-@click.option("--base-url", default=DEFAULT_BASE_URL, show_default=True, help="Eledo base URL.")
-@click.option("--token", default="", help="Eledo API token. Temporary explicit input.")
 @click.option("--template-version", type=int, default=None, help="Optional template version.")
 @click.option(
     "--payload",
@@ -39,19 +38,17 @@ def documents_group() -> None:
 @click.option("--base64-json", is_flag=True, help="Print JSON metadata with base64 PDF content.")
 def generate_pdf(
     template_id: str,
-    base_url: str,
-    token: str,
     template_version: int | None,
     payload_path: Path | None,
     output_path: Path | None,
     base64_json: bool,
 ) -> None:
     """Generate a PDF from an Eledo template."""
+    settings = require_connection_settings()
     run(
         _generate_pdf(
             template_id=template_id,
-            base_url=base_url,
-            token=token,
+            settings=settings,
             template_version=template_version,
             payload_path=payload_path,
             output_path=output_path,
@@ -63,8 +60,7 @@ def generate_pdf(
 async def _generate_pdf(
     *,
     template_id: str,
-    base_url: str,
-    token: str,
+    settings: ConnectionSettings,
     template_version: int | None,
     payload_path: Path | None,
     output_path: Path | None,
@@ -76,7 +72,7 @@ async def _generate_pdf(
         parsed = parse_json_object(payload_path.read_text(encoding="utf-8"))
         file_data = parsed or None
 
-    async with EledoClient(base_url=base_url, token=token) as client:
+    async with EledoClient(base_url=settings.base_url, token=settings.token) as client:
         result = await client.generate_pdf(
             template_id=template_id,
             template_version=template_version,

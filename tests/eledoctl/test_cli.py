@@ -7,8 +7,10 @@ def test_cli_top_level_help_lists_command_tree() -> None:
     result = CliRunner().invoke(main, ["--help"])
 
     assert result.exit_code == 0
+    assert "login" in result.output
+    assert "profile" in result.output
     assert "templates" in result.output
-    assert "pdf" in result.output
+    assert "documents" in result.output
     assert "internal" in result.output
 
 

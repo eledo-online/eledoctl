@@ -46,6 +46,12 @@ def documents_group() -> None:
     default=None,
     help="PDF output path. Defaults to filename returned by Eledo.",
 )
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=None,
+    help="Directory for the generated PDF when --output is not provided.",
+)
 @click.option("--base64-json", is_flag=True, help="Print JSON metadata with base64 PDF content.")
 def generate_pdf(
     template_id: str,
@@ -54,6 +60,7 @@ def generate_pdf(
     payload_file: Path | None,
     payload_stdin: bool,
     output_path: Path | None,
+    output_dir: Path | None,
     base64_json: bool,
 ) -> None:
     """Generate a PDF from an Eledo template."""
@@ -65,6 +72,7 @@ def generate_pdf(
             template_version=template_version,
             file_data=_resolve_payload(payload=payload, payload_file=payload_file, payload_stdin=payload_stdin),
             output_path=output_path,
+            output_dir=output_dir,
             base64_json=base64_json,
         )
     )
@@ -77,6 +85,7 @@ async def _generate_pdf(
     template_version: int | None,
     file_data: JsonObject | None,
     output_path: Path | None,
+    output_dir: Path | None,
     base64_json: bool,
 ) -> None:
     async with EledoClient(base_url=settings.base_url, token=settings.token) as client:
@@ -90,7 +99,11 @@ async def _generate_pdf(
         click.echo(json.dumps(result.as_json(), indent=2))
         return
 
-    destination = output_path or Path(result.filename)
+    destination = _resolve_output_path(
+        filename=result.filename,
+        output_path=output_path,
+        output_dir=output_dir,
+    )
     destination.write_bytes(result.content)
     click.echo(str(destination))
 
@@ -124,3 +137,19 @@ def _resolve_payload(
         return None
 
     return parsed or None
+
+def _resolve_output_path(
+    *,
+    filename: str,
+    output_path: Path | None,
+    output_dir: Path | None,
+) -> Path:
+    """Resolve the destination path for a generated PDF."""
+    if output_path is not None:
+        return output_path
+
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir / filename
+
+    return Path(filename)

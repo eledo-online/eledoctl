@@ -40,6 +40,16 @@ def documents_group() -> None:
     help='Read the Eledo "file" object from standard input.',
 )
 @click.option(
+    "--add-field",
+    "fields",
+    multiple=True,
+    metavar="KEY=VALUE",
+    help=(
+        "Add a top-level primitive field. May be repeated. "
+        "Ignored when a JSON payload source is provided."
+    ),
+)
+@click.option(
     "--output",
     "output_path",
     type=click.Path(path_type=Path, dir_okay=False),
@@ -59,6 +69,7 @@ def generate_pdf(
     payload: str | None,
     payload_file: Path | None,
     payload_stdin: bool,
+    fields: tuple[str, ...],
     output_path: Path | None,
     output_dir: Path | None,
     base64_json: bool,
@@ -70,7 +81,12 @@ def generate_pdf(
             template_id=template_id,
             settings=settings,
             template_version=template_version,
-            file_data=_resolve_payload(payload=payload, payload_file=payload_file, payload_stdin=payload_stdin),
+            file_data=_resolve_payload(
+                payload=payload,
+                payload_file=payload_file,
+                payload_stdin=payload_stdin,
+                fields=fields
+            ),
             output_path=output_path,
             output_dir=output_dir,
             base64_json=base64_json,
@@ -112,6 +128,7 @@ def _resolve_payload(
     payload: str | None,
     payload_file: Path | None,
     payload_stdin: bool,
+    fields: tuple[str, ...],
 ) -> JsonObject | None:
     """Read and parse document data from one configured input source."""
     source_count = sum(
@@ -128,15 +145,45 @@ def _resolve_payload(
         )
 
     if payload is not None:
-        parsed = parse_json_object(payload)
-    elif payload_file is not None:
-        parsed = parse_json_object(payload_file.read_text(encoding="utf-8"))
-    elif payload_stdin:
-        parsed = parse_json_object(click.get_text_stream("stdin").read())
-    else:
+        return parse_json_object(payload) or None
+
+    if payload_file is not None:
+        return parse_json_object(
+            payload_file.read_text(encoding="utf-8")
+        ) or None
+
+    if payload_stdin:
+        return parse_json_object(
+            click.get_text_stream("stdin").read()
+        ) or None
+
+    return _build_field_payload(fields)
+
+def _build_field_payload(fields: tuple[str, ...]) -> JsonObject | None:
+    """Build a JSON object from repeated KEY=VALUE field arguments."""
+    if not fields:
         return None
 
-    return parsed or None
+    payload: JsonObject = {}
+
+    for field in fields:
+        key, separator, value = field.partition("=")
+
+        if separator == "":
+            raise click.ClickException(
+                f"Invalid field {field!r}. Expected KEY=VALUE."
+            )
+
+        key = key.strip()
+
+        if not key:
+            raise click.ClickException(
+                f"Invalid field {field!r}. Field name cannot be empty."
+            )
+
+        payload[key] = value
+
+    return payload
 
 def _resolve_output_path(
     *,

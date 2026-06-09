@@ -8,7 +8,7 @@ from eledoctl.cli.documents import documents_group
 from eledoctl.cli.internal.docs import internal_group
 from eledoctl.cli.login import login
 from eledoctl.cli.profile import profile
-from eledoctl.cli.templates import templates_group
+from eledoctl.cli.templates import templates
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -18,7 +18,7 @@ def main() -> None:
 
 main.add_command(login)
 main.add_command(profile)
-main.add_command(templates_group)
+main.add_command(templates)
 main.add_command(documents_group)
 main.add_command(internal_group)
 

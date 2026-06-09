@@ -28,6 +28,7 @@ def templates(scope: str) -> None:
 
 
 async def _templates(*, settings: ConnectionSettings, scope: TemplateScope) -> None:
+    """Fetch and print Eledo templates for the selected scope."""
     async with EledoClient(base_url=settings.base_url, token=settings.token) as client:
         result = await client.get_templates(scope=scope)
 

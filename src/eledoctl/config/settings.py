@@ -5,23 +5,23 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
-import click
 from platformdirs import user_config_path
 
 from pyeledo.types import JsonObject, JsonValue
 
 APP_NAME = "eledoctl"
 CONFIG_FILE = "config.json"
-
-from dataclasses import dataclass
+DEFAULT_BASE_URL = "https://eledo.online"
 
 
 @dataclass(frozen=True, slots=True)
 class ConnectionSettings:
     base_url: str
     token: str
+
 
 def load_connection_settings() -> ConnectionSettings:
     """Load the default persisted Eledo connection settings."""
@@ -44,6 +44,7 @@ def load_connection_settings() -> ConnectionSettings:
         base_url=base_url,
         token=token,
     )
+
 
 def config_dir() -> Path:
     """Return the user configuration directory."""
@@ -97,11 +98,11 @@ def save_config(config: JsonObject) -> None:
     temporary_path.replace(destination)
 
 
-def save_token(*, base_url: str, token: str) -> None:
+def save_connection_settings(settings: ConnectionSettings) -> None:
     """Persist the default Eledo connection and API token."""
     config = load_config()
     config["default"] = {
-        "base_url": base_url.rstrip("/"),
-        "token": token,
+        "base_url": settings.base_url.rstrip("/"),
+        "token": settings.token,
     }
     save_config(config)

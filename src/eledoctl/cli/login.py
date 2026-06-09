@@ -7,9 +7,10 @@ import webbrowser
 
 import click
 
-from eledoctl.cli.common import DEFAULT_BASE_URL, run
-from eledoctl.config.settings import save_token
-from pyeledo import EledoApiError, EledoClient
+from eledoctl.cli.common import run
+from eledoctl.config.settings import DEFAULT_BASE_URL, ConnectionSettings, save_connection_settings
+from pyeledo import EledoApiError, EledoAuthenticationError, EledoClient
+from pyeledo.profile import Profile
 
 LOGIN_PATH = "/app/login/start"
 
@@ -37,7 +38,7 @@ def login(base_url: str) -> None:
     click.echo(f"Login URL: {login_url}")
 
     if not webbrowser.open(login_url, new=2):
-        click.echo("The browser could not be opened automatically. Open the URL above manually.")
+        click.echo("The browser could not be opened automatically. Open the URL above manually.", err=True)
 
     click.echo()
     token = click.prompt("Paste your Eledo API token", hide_input=True).strip()
@@ -45,21 +46,18 @@ def login(base_url: str) -> None:
     if not token:
         raise click.ClickException("The API token cannot be empty.")
 
+    settings = ConnectionSettings(
+        base_url=normalized_base_url,
+        token=token,
+    )
+
     try:
-        profile = run(
-            _validate_token(
-                base_url=normalized_base_url,
-                token=token,
-            )
-        )
-    except EledoApiError as exc:
+        profile = run(_validate_token(settings))
+    except (EledoApiError, EledoAuthenticationError) as exc:
         raise click.ClickException(f"Authentication failed: {exc}") from exc
 
     try:
-        save_token(
-            base_url=normalized_base_url,
-            token=token,
-        )
+        save_connection_settings(ConnectionSettings(base_url=normalized_base_url, token=token))
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise click.ClickException(f"Could not save the local configuration: {exc}") from exc
 
@@ -68,7 +66,7 @@ def login(base_url: str) -> None:
     click.echo("The API token has been saved to the local eledoctl configuration.")
 
 
-async def _validate_token(*, base_url: str, token: str):
+async def _validate_token(settings: ConnectionSettings) -> Profile:
     """Validate an Eledo API token and return its profile."""
-    async with EledoClient(base_url=base_url, token=token) as client:
+    async with EledoClient(base_url=settings.base_url, token=settings.token) as client:
         return await client.get_profile()

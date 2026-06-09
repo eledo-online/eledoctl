@@ -11,12 +11,11 @@ import click
 
 from eledoctl.config.settings import ConnectionSettings, load_connection_settings
 
-DEFAULT_BASE_URL = "https://eledo.online"
-
 
 def run[T](coro: Coroutine[Any, Any, T]) -> T:
     """Run an asynchronous command implementation."""
     return asyncio.run(coro)
+
 
 def require_connection_settings() -> ConnectionSettings:
     """Load persisted connection settings or raise a user-facing CLI error."""

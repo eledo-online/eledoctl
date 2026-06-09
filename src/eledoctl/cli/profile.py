@@ -19,6 +19,7 @@ def profile() -> None:
 
 
 async def _profile(*, settings: ConnectionSettings) -> None:
+    """Fetch and print the current Eledo profile."""
     async with EledoClient(base_url=settings.base_url, token=settings.token) as client:
         result = await client.get_profile()
 

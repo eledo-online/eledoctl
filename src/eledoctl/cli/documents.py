@@ -16,7 +16,7 @@ from pyeledo.utils import parse_json_object
 
 @click.group("documents")
 def documents_group() -> None:
-    """PDF generation commands."""
+    """Document generation commands."""
 
 
 @documents_group.command("generate")
@@ -44,23 +44,20 @@ def documents_group() -> None:
     "fields",
     multiple=True,
     metavar="KEY=VALUE",
-    help=(
-        "Add a top-level primitive field. May be repeated. "
-        "Ignored when a JSON payload source is provided."
-    ),
+    help=("Add a top-level primitive field. May be repeated. Ignored when a JSON payload source is provided."),
 )
 @click.option(
     "--output",
     "output_path",
     type=click.Path(path_type=Path, dir_okay=False),
     default=None,
-    help="PDF output path. Defaults to filename returned by Eledo.",
+    help="Document output path. Defaults to filename returned by Eledo.",
 )
 @click.option(
     "--output-dir",
     type=click.Path(path_type=Path, file_okay=False),
     default=None,
-    help="Directory for the generated PDF when --output is not provided.",
+    help="Directory for the generated document when --output is not provided.",
 )
 @click.option("--base64-json", is_flag=True, help="Print JSON metadata with base64 PDF content.")
 def generate_pdf(
@@ -74,7 +71,7 @@ def generate_pdf(
     output_dir: Path | None,
     base64_json: bool,
 ) -> None:
-    """Generate a PDF from an Eledo template."""
+    """Generate a PDF document from an Eledo template."""
     settings = require_connection_settings()
     run(
         _generate_pdf(
@@ -82,10 +79,7 @@ def generate_pdf(
             settings=settings,
             template_version=template_version,
             file_data=_resolve_payload(
-                payload=payload,
-                payload_file=payload_file,
-                payload_stdin=payload_stdin,
-                fields=fields
+                payload=payload, payload_file=payload_file, payload_stdin=payload_stdin, fields=fields
             ),
             output_path=output_path,
             output_dir=output_dir,
@@ -123,6 +117,7 @@ async def _generate_pdf(
     destination.write_bytes(result.content)
     click.echo(str(destination))
 
+
 def _resolve_payload(
     *,
     payload: str | None,
@@ -140,24 +135,25 @@ def _resolve_payload(
     )
 
     if source_count > 1:
-        raise click.ClickException(
-            "Use only one of --payload, --payload-file, or --payload-stdin."
+        raise click.ClickException("Use only one of --payload, --payload-file, or --payload-stdin.")
+
+    if source_count == 1 and fields:
+        click.echo(
+            "Warning: --add-field values are ignored because a JSON payload was provided.",
+            err=True,
         )
 
     if payload is not None:
         return parse_json_object(payload) or None
 
     if payload_file is not None:
-        return parse_json_object(
-            payload_file.read_text(encoding="utf-8")
-        ) or None
+        return parse_json_object(payload_file.read_text(encoding="utf-8")) or None
 
     if payload_stdin:
-        return parse_json_object(
-            click.get_text_stream("stdin").read()
-        ) or None
+        return parse_json_object(click.get_text_stream("stdin").read()) or None
 
     return _build_field_payload(fields)
+
 
 def _build_field_payload(fields: tuple[str, ...]) -> JsonObject | None:
     """Build a JSON object from repeated KEY=VALUE field arguments."""
@@ -170,20 +166,17 @@ def _build_field_payload(fields: tuple[str, ...]) -> JsonObject | None:
         key, separator, value = field.partition("=")
 
         if separator == "":
-            raise click.ClickException(
-                f"Invalid field {field!r}. Expected KEY=VALUE."
-            )
+            raise click.ClickException(f"Invalid field {field!r}. Expected KEY=VALUE.")
 
         key = key.strip()
 
         if not key:
-            raise click.ClickException(
-                f"Invalid field {field!r}. Field name cannot be empty."
-            )
+            raise click.ClickException(f"Invalid field {field!r}. Field name cannot be empty.")
 
         payload[key] = value
 
     return payload
+
 
 def _resolve_output_path(
     *,
@@ -191,7 +184,7 @@ def _resolve_output_path(
     output_path: Path | None,
     output_dir: Path | None,
 ) -> Path:
-    """Resolve the destination path for a generated PDF."""
+    """Resolve the destination path for a generated document."""
     if output_path is not None:
         return output_path
 

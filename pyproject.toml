@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "eledoctl"
-version = "0.1.0"
+version = "1.0.0"
 description = "Command-line toolkit and async Python API client for Eledo."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -12,9 +12,9 @@ requires-python = ">=3.12"
 authors = [
   { name = "Eledo" }
 ]
-keywords = ["eledo", "cli", "pdf", "automation", "api", "documentation"]
+keywords = ["eledo", "cli", "sdk", "pdf", "automation", "api", "documents"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
@@ -25,6 +25,8 @@ classifiers = [
   "Topic :: Office/Business",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Topic :: Utilities",
+  "Topic :: Internet :: WWW/HTTP",
+  "Typing :: Typed",
 ]
 dependencies = [
   "click>=8.1",

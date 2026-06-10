@@ -51,6 +51,21 @@ dev = [
 [project.scripts]
 eledoctl = "eledoctl.cli.main:main"
 
+[tool.hatch.build]
+include = [
+  "src/pyeledo/**",
+  "src/eledoctl/**",
+  "README.md",
+  "LICENSE",
+]
+
+exclude = [
+  ".github/**",
+  "tests/**",
+  "CONTRIBUTING.md",
+  "uv.lock",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pyeledo", "src/eledoctl"]
 

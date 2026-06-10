@@ -40,11 +40,11 @@ async with EledoClient(token="...") as client:
 ## Initial CLI Tree
 
 ```bash
+eledoctl login
 eledoctl profile
-eledoctl templates list
-eledoctl templates schema TEMPLATE_ID
-eledoctl pdf generate TEMPLATE_ID --payload payload.json --output output.pdf
-eledoctl internal docs sync docs
+eledoctl templates
+eledoctl documents generate TEMPLATE_ID --payload payload.json --output output.pdf
+eledoctl internal
 ```
 
 For now the CLI passes an empty token unless `--token` is provided. Persistent token storage will be added later in `eledoctl`, not in `pyeledo`.

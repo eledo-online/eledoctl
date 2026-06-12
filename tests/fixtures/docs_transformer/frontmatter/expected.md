@@ -1,0 +1,92 @@
+import DocFeedbackForm from '@site/src/components/DocFeedbackForm';
+
+# Installation
+
+n8n supports **community nodes** — extensions developed outside of the core n8n project.
+
+Community nodes can be:
+
+* **Verified** — reviewed and approved by the n8n team
+* **Unverified** — published but not reviewed
+
+The **Eledo node is now verified**, which means it can be installed directly from the n8n interface and is fully supported within the n8n ecosystem.
+
+---
+
+## n8n Cloud
+
+If you are using **n8n Cloud**, you can install verified community nodes directly from the UI.
+
+To install the Eledo node:
+
+1. Open your n8n workspace
+2. Go to **Settings → Community Nodes**
+3. Search for **Eledo**
+4. Click **Install**
+
+You must be the **instance owner** (or have sufficient permissions) to install community nodes.
+
+Once installed, the Eledo node will be available in the node panel and can be added to your workflows.
+
+---
+
+## Self-Hosted n8n Instance
+
+If you are running your own n8n instance, you can install the Eledo node in multiple ways.
+
+### Option 1 — Install via UI (Recommended)
+
+If your instance supports community node installation via UI:
+
+1. Open your n8n instance
+2. Go to **Settings → Community Nodes**
+3. Search for **Eledo**
+4. Click **Install**
+
+This is the simplest and recommended method.
+
+---
+
+### Option 2 — Manual Installation (Docker / Shell Access)
+
+Advanced users can install the node manually inside their n8n environment.
+
+The Eledo package is available on npm:
+
+https://www.npmjs.com/package/@eledo/n8n-nodes-eledo
+
+Refer to the official n8n guide for manual installation:
+
+https://docs.n8n.io/integrations/community-nodes/installation/manual-install/
+
+---
+
+## Version Pinning
+
+You can install a specific version of the node if needed.
+
+Example:
+
+```
+@eledo/n8n-nodes-eledo@1.0.2
+```
+
+This is useful for:
+
+- predictable deployments
+- testing specific releases
+
+When using the UI, specify the version in the package field.
+When installing manually, include the version in the npm install command.
+
+---
+
+## After Installation
+
+Once installed, the Eledo node appears in your node list and can be used like any other n8n node.
+
+You are now ready to start building workflows.
+
+---
+
+<DocFeedbackForm />

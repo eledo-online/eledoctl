@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import webbrowser
+from typing import cast
 
 import click
 
@@ -50,6 +51,7 @@ def login(base_url: str, token: str | None) -> None:
     click.echo(f"Authenticated as {profile.account}.")
     click.echo("The API token has been saved to the local eledoctl configuration.")
 
+
 def _prompt_for_token(base_url: str) -> str:
     login_url = f"{base_url}{LOGIN_PATH}"
 
@@ -68,7 +70,8 @@ def _prompt_for_token(base_url: str) -> str:
 
     click.echo()
 
-    return click.prompt("Paste your Eledo API token", hide_input=True)
+    return cast(str, click.prompt("Paste your Eledo API token", type=str, hide_input=True))
+
 
 async def _validate_token(settings: ConnectionSettings) -> Profile:
     """Validate an Eledo API token and return its profile."""

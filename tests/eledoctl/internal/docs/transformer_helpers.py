@@ -10,6 +10,7 @@ FIXTURES_ROOT = Path(__file__).parents[3] / "fixtures" / "docs_transformer"
 def fixture(path: str) -> str:
     return (FIXTURES_ROOT / path).read_text(encoding="utf-8")
 
+
 def options_only(**overrides: bool) -> TransformOptions:
     values = {
         "normalize_line_endings": False,

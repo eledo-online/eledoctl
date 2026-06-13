@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import cast
 
 import httpx
 
@@ -177,10 +176,10 @@ def parse_article_retrieve_response(data: JsonObject) -> CmsArticleRetrieveRespo
     for raw_child in raw_children:
         if not isinstance(raw_child, dict):
             raise EledoInvalidResponseError("Invalid Articles API response: expected child object.")
-        children.append(parse_article_child(cast(JsonObject, raw_child)))
+        children.append(parse_article_child(raw_child))
 
     return CmsArticleRetrieveResponse(
-        article=parse_article(cast(JsonObject, raw_article)),
+        article=parse_article(raw_article),
         children=tuple(children),
     )
 
@@ -227,7 +226,7 @@ def _response_json_object(response: httpx.Response) -> JsonObject:
     if not isinstance(data, dict):
         raise EledoInvalidResponseError("Invalid Articles API response: expected JSON object.")
 
-    return cast(JsonObject, data)
+    return data
 
 
 def _response_json_object_or_empty(response: httpx.Response) -> JsonObject:

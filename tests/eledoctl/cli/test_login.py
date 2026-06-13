@@ -9,7 +9,7 @@ from click.testing import CliRunner
 
 import eledoctl.cli.login as login_module
 from eledoctl.cli.login import login
-from eledoctl.config.settings import ConnectionSettings, DEFAULT_BASE_URL
+from eledoctl.config.settings import DEFAULT_BASE_URL, ConnectionSettings
 from pyeledo import EledoApiError, EledoAuthenticationError, Profile
 
 
@@ -153,6 +153,7 @@ def test_login_converts_save_errors_to_click_errors(
 
     assert result.exit_code != 0
     assert "Could not save the local configuration:" in result.output
+
 
 def test_login_accepts_token_option_without_opening_browser(monkeypatch) -> None:
     opened_urls: list[str] = []

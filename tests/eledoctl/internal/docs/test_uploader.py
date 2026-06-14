@@ -40,11 +40,10 @@ class FakeCmsClient:
         self.updated.append({"path": path, "request": request, "label": label})
         return {"ok": True}
 
+
 class FakeMalformedCmsClient(FakeCmsClient):
     async def retrieve_article(self, path: tuple[str, ...]) -> CmsArticleRetrieveResponse:
-        raise EledoInvalidResponseError(
-            "Invalid Articles API response: expected article.markdown string."
-        )
+        raise EledoInvalidResponseError("Invalid Articles API response: expected article.markdown string.")
 
 
 class FakeNotFoundError(EledoApiError):
@@ -417,6 +416,7 @@ def _result(tmp_path: Path, *, action: SyncAction, status: SyncStatus):
         dry_run=False,
         uploaded=action in {SyncAction.CREATE, SyncAction.UPDATE},
     )
+
 
 @pytest.mark.asyncio
 async def test_sync_one_document_marks_invalid_cms_reference_response_as_failure(tmp_path: Path) -> None:

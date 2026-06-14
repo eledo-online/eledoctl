@@ -442,3 +442,90 @@ sidebar_position: 7
         "sidebar_position": 7,
     }
     assert result.content == source
+
+
+def test_reference_links_with_duplicate_labels_are_patched_by_position() -> None:
+    result = transform_document(
+        source_doc="""Read [Template Editor](./template-editor/index.mdx).
+
+Again [Template Editor](../template-editor/index.mdx).
+""",
+        reference_doc="""Read [Template Editor](/documentation/product/template-editor).
+
+Again [Template Editor](/documentation/template-editor).
+""",
+        options=options_only(patch_links_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.SUCCESS
+    assert (
+        result.content
+        == """Read [Template Editor](/documentation/product/template-editor).
+
+Again [Template Editor](/documentation/template-editor).
+"""
+    )
+    assert result.messages == ()
+
+
+def test_reference_links_with_duplicate_labels_warn_when_position_counts_differ() -> None:
+    source = """Read [Template Editor](./one.mdx).
+
+Again [Template Editor](./two.mdx).
+"""
+
+    result = transform_document(
+        source_doc=source,
+        reference_doc="""Read [Template Editor](/documentation/template-editor).
+""",
+        options=options_only(patch_links_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.WARNING
+    assert result.content == source
+    assert len(result.messages) == 1
+    assert result.messages[0].code == "ambiguous_reference_url_count_mismatch"
+
+
+def test_reference_images_with_duplicate_labels_are_patched_by_position() -> None:
+    result = transform_document(
+        source_doc="""![Make File Output](./source-one.png)
+
+![Make File Output](./source-two.png)
+""",
+        reference_doc="""![Make File Output](/cms/one.png)
+
+![Make File Output](/cms/two.png)
+""",
+        options=options_only(patch_images_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.SUCCESS
+    assert (
+        result.content
+        == """![Make File Output](/cms/one.png)
+
+![Make File Output](/cms/two.png)
+"""
+    )
+    assert result.messages == ()
+
+
+def test_reference_images_with_duplicate_labels_warn_when_position_counts_differ() -> None:
+    source = """![Image](./one.png)
+
+![Image](./two.png)
+"""
+
+    result = transform_document(
+        source_doc=source,
+        reference_doc="""![Image](/cms/one.png)
+""",
+        options=options_only(patch_images_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.WARNING
+    assert result.content == source
+
+    assert len(result.messages) == 1
+    assert result.messages[0].code == "ambiguous_reference_url_count_mismatch"

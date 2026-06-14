@@ -205,7 +205,7 @@ async def sync_one_document(
             dry_run=options.dry_run,
             code="source_read_failed",
             message=str(exc),
-        )   
+        )
 
     transform_result = transform_document(
         source_doc=source_doc,

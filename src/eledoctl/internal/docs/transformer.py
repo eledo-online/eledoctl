@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -40,6 +41,8 @@ _JSX_ATTRIBUTE_RE = re.compile(
 )
 
 _MARKDOWN_URL_RE = re.compile(r"(?P<image>!)?\[(?P<label>(?:\\.|[^\]\\])*)\]\((?P<url>[^)\n]+)\)")
+
+type _MarkdownReferenceKey = tuple[str, str]
 
 _ADMONITION_KINDS = {
     "caution",
@@ -105,6 +108,10 @@ class _MarkdownReference:
     kind: str
     label: str
     url: str
+
+    @property
+    def key(self) -> _MarkdownReferenceKey:
+        return self.kind, self.label
 
 
 def transform_document(
@@ -440,14 +447,56 @@ def _patch_from_reference(
         )
         return content
 
-    reference_urls = _build_reference_url_map(
+    source_references = _extract_markdown_references(
+        content,
+        include_links=patch_links,
+        include_images=patch_images,
+    )
+    reference_references = _extract_markdown_references(
         reference_doc,
-        messages=messages,
         include_links=patch_links,
         include_images=patch_images,
     )
 
-    missing_references: list[_MarkdownReference] = []
+    source_counts = Counter(reference.key for reference in source_references)
+    reference_groups = _group_reference_urls(reference_references)
+
+    direct_url_map: dict[_MarkdownReferenceKey, str] = {}
+    positional_url_map: dict[_MarkdownReferenceKey, tuple[str, ...]] = {}
+    blocked_keys: set[_MarkdownReferenceKey] = set()
+    missing_keys: set[_MarkdownReferenceKey] = set()
+
+    for key, source_count in source_counts.items():
+        reference_urls = reference_groups.get(key)
+
+        if reference_urls is None:
+            missing_keys.add(key)
+            blocked_keys.add(key)
+            continue
+
+        if source_count == 1 and len(reference_urls) == 1:
+            direct_url_map[key] = reference_urls[0]
+            continue
+
+        if source_count == len(reference_urls):
+            positional_url_map[key] = reference_urls
+            continue
+
+        blocked_keys.add(key)
+
+        kind, label = key
+        messages.append(
+            TransformMessage(
+                level=TransformMessageLevel.WARNING,
+                code="ambiguous_reference_url_count_mismatch",
+                message=(
+                    f"Reference document contains {len(reference_urls)} {kind} URL(s) for label {label!r}, "
+                    f"but source document contains {source_count}; skipped this mapping."
+                ),
+            )
+        )
+
+    occurrence_counter: Counter[_MarkdownReferenceKey] = Counter()
 
     def replace(match: re.Match[str]) -> str:
         markdown_reference = _markdown_reference_from_match(match)
@@ -458,43 +507,48 @@ def _patch_from_reference(
         if markdown_reference.kind == "image" and not patch_images:
             return match.group(0)
 
-        key = (markdown_reference.kind, markdown_reference.label)
-        reference_url = reference_urls.get(key)
+        key = markdown_reference.key
 
-        if reference_url is None:
-            missing_references.append(markdown_reference)
+        reference_url = direct_url_map.get(key)
+        if reference_url is not None:
+            return _format_markdown_reference(markdown_reference, reference_url)
+
+        positional_urls = positional_url_map.get(key)
+        if positional_urls is not None:
+            occurrence_index = occurrence_counter[key]
+            occurrence_counter[key] += 1
+
+            if occurrence_index < len(positional_urls):
+                return _format_markdown_reference(markdown_reference, positional_urls[occurrence_index])
+
             return match.group(0)
 
-        if markdown_reference.kind == "image":
-            return f"![{markdown_reference.label}]({reference_url})"
-
-        return f"[{markdown_reference.label}]({reference_url})"
+        return match.group(0)
 
     patched_content = _MARKDOWN_URL_RE.sub(replace, content)
 
-    if missing_references:
+    if missing_keys:
         messages.append(
             TransformMessage(
                 level=TransformMessageLevel.WARNING,
                 code="missing_reference_urls",
-                message=_format_missing_reference_urls_message(missing_references),
+                message=_format_missing_reference_urls_message(source_references, missing_keys),
             )
         )
 
     return patched_content
 
 
-def _build_reference_url_map(
-    reference_doc: str,
+def _extract_markdown_references(
+    content: str,
     *,
-    messages: list[TransformMessage],
     include_links: bool,
     include_images: bool,
-) -> dict[tuple[str, str], str]:
-    """Build a Markdown reference URL map from the CMS reference document."""
-    grouped_urls: dict[tuple[str, str], set[str]] = {}
+) -> tuple[_MarkdownReference, ...]:
+    """Extract Markdown links/images from content in document order."""
+    references: list[_MarkdownReference] = []
 
-    for match in _MARKDOWN_URL_RE.finditer(reference_doc):
+    for match in _MARKDOWN_URL_RE.finditer(content):
         markdown_reference = _markdown_reference_from_match(match)
 
         if markdown_reference.kind == "link" and not include_links:
@@ -503,28 +557,9 @@ def _build_reference_url_map(
         if markdown_reference.kind == "image" and not include_images:
             continue
 
-        key = (markdown_reference.kind, markdown_reference.label)
-        grouped_urls.setdefault(key, set()).add(markdown_reference.url)
+        references.append(markdown_reference)
 
-    reference_urls: dict[tuple[str, str], str] = {}
-
-    for key, urls in grouped_urls.items():
-        if len(urls) == 1:
-            reference_urls[key] = next(iter(urls))
-            continue
-
-        kind, label = key
-        messages.append(
-            TransformMessage(
-                level=TransformMessageLevel.WARNING,
-                code="ambiguous_reference_url",
-                message=(
-                    f"Reference document contains multiple {kind} URLs for label {label!r}; skipped this mapping."
-                ),
-            )
-        )
-
-    return reference_urls
+    return tuple(references)
 
 
 def _markdown_reference_from_match(match: re.Match[str]) -> _MarkdownReference:
@@ -536,11 +571,38 @@ def _markdown_reference_from_match(match: re.Match[str]) -> _MarkdownReference:
     )
 
 
-def _format_missing_reference_urls_message(references: list[_MarkdownReference]) -> str:
-    """Format missing reference URL warning message."""
-    details = ", ".join(f"{reference.kind} {reference.label!r} -> {reference.url!r}" for reference in references)
+def _group_reference_urls(
+    references: Sequence[_MarkdownReference],
+) -> dict[_MarkdownReferenceKey, tuple[str, ...]]:
+    """Group reference URLs by Markdown reference key while preserving order."""
+    grouped: defaultdict[_MarkdownReferenceKey, list[str]] = defaultdict(list)
 
-    return f"No matching CMS reference URLs found for {len(references)} Markdown reference(s): {details}"
+    for reference in references:
+        grouped[reference.key].append(reference.url)
+
+    return {key: tuple(urls) for key, urls in grouped.items()}
+
+
+def _format_markdown_reference(reference: _MarkdownReference, url: str) -> str:
+    """Render a Markdown link or image with a patched URL."""
+    if reference.kind == "image":
+        return f"![{reference.label}]({url})"
+
+    return f"[{reference.label}]({url})"
+
+
+def _format_missing_reference_urls_message(
+    source_references: Sequence[_MarkdownReference],
+    missing_keys: set[_MarkdownReferenceKey],
+) -> str:
+    """Format missing reference URL warning message."""
+    missing_references = [reference for reference in source_references if reference.key in missing_keys]
+
+    details = ", ".join(
+        f"{reference.kind} {reference.label!r} -> {reference.url!r}" for reference in missing_references
+    )
+
+    return f"No matching CMS reference URLs found for {len(missing_references)} Markdown reference(s): {details}"
 
 
 def _status_for(messages: Sequence[TransformMessage]) -> TransformStatus:

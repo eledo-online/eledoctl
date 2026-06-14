@@ -121,8 +121,11 @@ def transform_document(
     if options.normalize_line_endings:
         content = _normalize_line_endings(content)
 
-    if options.strip_frontmatter:
-        content, metadata = _strip_frontmatter(content, messages)
+    content, metadata = _extract_frontmatter(
+        content,
+        messages,
+        strip=options.strip_frontmatter,
+    )
 
     if options.remove_imports:
         content = _remove_imports(content)
@@ -160,8 +163,13 @@ def _normalize_line_endings(content: str) -> str:
     return content.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _strip_frontmatter(content: str, messages: list[TransformMessage]) -> tuple[str, Frontmatter]:
-    """Strip a leading YAML frontmatter block and return parsed metadata."""
+def _extract_frontmatter(
+    content: str,
+    messages: list[TransformMessage],
+    *,
+    strip: bool,
+) -> tuple[str, Frontmatter]:
+    """Parse leading YAML frontmatter and optionally strip it from content."""
     lines = content.splitlines(keepends=True)
 
     if not lines or lines[0].strip() != "---":
@@ -170,12 +178,17 @@ def _strip_frontmatter(content: str, messages: list[TransformMessage]) -> tuple[
     for closing_index in range(1, len(lines)):
         if lines[closing_index].strip() == "---":
             raw_frontmatter = "".join(lines[1:closing_index])
+            metadata = _parse_frontmatter(raw_frontmatter, messages)
+
+            if not strip:
+                return content, metadata
+
             remaining_content = "".join(lines[closing_index + 1 :])
 
             if remaining_content.startswith("\n"):
                 remaining_content = remaining_content[1:]
 
-            return remaining_content, _parse_frontmatter(raw_frontmatter, messages)
+            return remaining_content, metadata
 
     messages.append(
         TransformMessage(

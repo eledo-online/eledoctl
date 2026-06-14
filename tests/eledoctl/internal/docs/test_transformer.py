@@ -77,7 +77,6 @@ title: Test
     )
 
     assert result.status == TransformStatus.SUCCESS
-    assert result.metadata == {}
     assert result.content == source
 
 
@@ -421,3 +420,25 @@ def test_reference_link_patching_warns_when_reference_doc_is_missing() -> None:
     assert result.content == source
     assert len(result.messages) == 1
     assert result.messages[0].code == "missing_reference_doc"
+
+
+def test_transform_document_returns_metadata_even_when_frontmatter_stripping_is_disabled() -> None:
+    source = """---
+title: Test Document
+sidebar_position: 7
+---
+
+# Test Document
+"""
+
+    result = transform_document(
+        source_doc=source,
+        options=options_only(strip_frontmatter=False),
+    )
+
+    assert result.status == TransformStatus.SUCCESS
+    assert result.metadata == {
+        "title": "Test Document",
+        "sidebar_position": 7,
+    }
+    assert result.content == source

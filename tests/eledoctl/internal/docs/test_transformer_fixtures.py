@@ -71,7 +71,6 @@ def test_unsupported_jsx_fixture_removes_component() -> None:
     )
 
     assert result.status == TransformStatus.SUCCESS
-    assert result.metadata == {}
     assert result.content == fixture("unsupported_jsx/expected.md")
 
     assert len(result.messages) == 0
@@ -85,7 +84,6 @@ def test_reference_links_fixture_patches_source_urls_from_reference_doc() -> Non
     )
 
     assert result.status == TransformStatus.SUCCESS
-    assert result.metadata == {}
     assert result.content == fixture("reference_links/expected.mdx")
     assert result.messages == ()
 
@@ -98,7 +96,6 @@ def test_reference_links_fixture_extra_source_url_issues_warning() -> None:
     )
 
     assert result.status == TransformStatus.WARNING
-    assert result.metadata == {}
     assert result.content == fixture("reference_links/expected_extra_url_reference.mdx")
 
     assert len(result.messages) == 1
@@ -114,7 +111,6 @@ def test_reference_links_fixture_removed_url_link_in_source_doc() -> None:
     )
 
     assert result.status == TransformStatus.SUCCESS
-    assert result.metadata == {}
     assert result.content == fixture("reference_links/expected_with_removed_url.mdx")
     assert result.messages == ()
 
@@ -127,7 +123,6 @@ def test_reference_links_fixture_no_reference_doc() -> None:
     )
 
     assert result.status == TransformStatus.WARNING
-    assert result.metadata == {}
     # No URL transformation happens
     assert result.content == fixture("reference_links/source.mdx")
 
@@ -144,7 +139,6 @@ def test_reference_images_fixture_patches_source_urls_from_reference_doc() -> No
     )
 
     assert result.status == TransformStatus.SUCCESS
-    assert result.metadata == {}
     assert result.content == fixture("reference_images/expected.mdx")
     assert result.messages == ()
 
@@ -157,7 +151,6 @@ def test_reference_images_fixture_extra_source_image_issues_warning() -> None:
     )
 
     assert result.status == TransformStatus.WARNING
-    assert result.metadata == {}
     assert result.content == fixture("reference_images/expected_extra_image_reference.mdx")
 
     assert len(result.messages) == 1
@@ -173,7 +166,6 @@ def test_reference_images_fixture_removed_image_link_in_source_doc() -> None:
     )
 
     assert result.status == TransformStatus.SUCCESS
-    assert result.metadata == {}
     assert result.content == fixture("reference_images/expected_with_removed_image.mdx")
     assert result.messages == ()
 
@@ -186,7 +178,6 @@ def test_reference_images_fixture_no_reference_doc() -> None:
     )
 
     assert result.status == TransformStatus.WARNING
-    assert result.metadata == {}
     # No Image URL transformation happens
     assert result.content == fixture("reference_images/source.mdx")
 

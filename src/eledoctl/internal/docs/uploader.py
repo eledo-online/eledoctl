@@ -17,7 +17,7 @@ from eledoctl.internal.docs.transformer import (
     TransformStatus,
     transform_document,
 )
-from pyeledo import EledoApiError
+from pyeledo import EledoApiError, EledoInvalidResponseError
 from pyeledo.internal.cms import (
     CmsArticleCreateRequest,
     CmsArticleRetrieveResponse,
@@ -189,6 +189,13 @@ async def sync_one_document(
                 code="cms_retrieve_failed",
                 message=str(exc),
             )
+    except EledoInvalidResponseError as exc:
+        return _failure_result(
+            item=item,
+            dry_run=options.dry_run,
+            code="cms_invalid_reference_response",
+            message=str(exc),
+        )
 
     try:
         source_doc = item.source_path.read_text(encoding="utf-8")
@@ -198,7 +205,7 @@ async def sync_one_document(
             dry_run=options.dry_run,
             code="source_read_failed",
             message=str(exc),
-        )
+        )   
 
     transform_result = transform_document(
         source_doc=source_doc,

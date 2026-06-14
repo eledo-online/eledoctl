@@ -16,7 +16,7 @@ from eledoctl.internal.docs.uploader import (
     write_inspection_file,
     write_log_file,
 )
-from pyeledo import EledoApiError
+from pyeledo import EledoApiError, EledoInvalidResponseError
 from pyeledo.internal.cms import CmsArticle, CmsArticleRetrieveResponse
 
 
@@ -39,6 +39,12 @@ class FakeCmsClient:
     async def update_article(self, *, path: tuple[str, ...], request: Any, label: str | None = None) -> dict[str, Any]:
         self.updated.append({"path": path, "request": request, "label": label})
         return {"ok": True}
+
+class FakeMalformedCmsClient(FakeCmsClient):
+    async def retrieve_article(self, path: tuple[str, ...]) -> CmsArticleRetrieveResponse:
+        raise EledoInvalidResponseError(
+            "Invalid Articles API response: expected article.markdown string."
+        )
 
 
 class FakeNotFoundError(EledoApiError):
@@ -411,3 +417,38 @@ def _result(tmp_path: Path, *, action: SyncAction, status: SyncStatus):
         dry_run=False,
         uploaded=action in {SyncAction.CREATE, SyncAction.UPDATE},
     )
+
+@pytest.mark.asyncio
+async def test_sync_one_document_marks_invalid_cms_reference_response_as_failure(tmp_path: Path) -> None:
+    root = tmp_path / "docs"
+    write_file(
+        root / "api" / "documents" / "malformed.mdx",
+        """---
+title: Malformed
+sidebar_position: 9
+---
+
+# Malformed
+""",
+    )
+    plan = build_sync_plan(sync_options(root))
+    cms = FakeMalformedCmsClient()
+
+    result = await sync_one_document(
+        cms=cms,
+        item=plan.items[0],
+        options=sync_options(root),
+    )
+
+    assert result.action == SyncAction.FAILED
+    assert result.status == SyncStatus.FAILURE
+    assert result.uploaded is False
+    assert result.requires_inspection is True
+
+    assert len(result.messages) == 1
+    assert result.messages[0].level == "error"
+    assert result.messages[0].code == "cms_invalid_reference_response"
+    assert "expected article.markdown string" in result.messages[0].message
+
+    assert cms.created == []
+    assert cms.updated == []

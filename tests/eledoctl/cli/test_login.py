@@ -9,7 +9,7 @@ from click.testing import CliRunner
 
 import eledoctl.cli.login as login_module
 from eledoctl.cli.login import login
-from eledoctl.config.settings import ConnectionSettings
+from eledoctl.config.settings import DEFAULT_BASE_URL, ConnectionSettings
 from pyeledo import EledoApiError, EledoAuthenticationError, Profile
 
 
@@ -153,3 +153,43 @@ def test_login_converts_save_errors_to_click_errors(
 
     assert result.exit_code != 0
     assert "Could not save the local configuration:" in result.output
+
+
+def test_login_accepts_token_option_without_opening_browser(monkeypatch) -> None:
+    opened_urls: list[str] = []
+    saved_settings: list[ConnectionSettings] = []
+
+    async def fake_validate_token(settings: ConnectionSettings) -> Profile:
+        return Profile(account="test@example.com")
+
+    monkeypatch.setattr(
+        "eledoctl.cli.login.webbrowser.open",
+        lambda url, new=0: opened_urls.append(url) or True,
+    )
+    monkeypatch.setattr("eledoctl.cli.login._validate_token", fake_validate_token)
+    monkeypatch.setattr("eledoctl.cli.login.save_connection_settings", saved_settings.append)
+
+    result = CliRunner().invoke(login, ["--token", "secret-token"])
+
+    assert result.exit_code == 0
+    assert opened_urls == []
+    assert saved_settings == [
+        ConnectionSettings(base_url=DEFAULT_BASE_URL, token="secret-token"),
+    ]
+    assert "Authenticated as test@example.com." in result.output
+
+    def test_login_accepts_token_from_environment(monkeypatch) -> None:
+        opened_urls: list[str] = []
+        saved_settings: list[ConnectionSettings] = []
+
+        monkeypatch.setattr("eledoctl.cli.login.webbrowser.open", lambda url, new=0: opened_urls.append(url) or True)
+        monkeypatch.setattr("eledoctl.cli.login.run", lambda coro: Profile(account="test@example.com"))
+        monkeypatch.setattr("eledoctl.cli.login.save_connection_settings", saved_settings.append)
+
+        result = CliRunner().invoke(login, [], env={"ELEDO_API_TOKEN": "secret-token"})
+
+        assert result.exit_code == 0
+        assert opened_urls == []
+        assert saved_settings == [
+            ConnectionSettings(base_url=DEFAULT_BASE_URL, token="secret-token"),
+        ]

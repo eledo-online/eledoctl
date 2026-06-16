@@ -461,6 +461,22 @@ def _patch_from_reference(
     source_counts = Counter(reference.key for reference in source_references)
     reference_groups = _group_reference_urls(reference_references)
 
+    source_keys = set(source_counts)
+    reference_keys = set(reference_groups)
+    reference_only_keys = reference_keys - source_keys
+
+    if reference_only_keys:
+        messages.append(
+            TransformMessage(
+                level=TransformMessageLevel.WARNING,
+                code="reference_urls_not_in_source",
+                message=_format_reference_urls_not_in_source_message(
+                    reference_references,
+                    reference_only_keys,
+                ),
+            )
+        )
+
     direct_url_map: dict[_MarkdownReferenceKey, str] = {}
     positional_url_map: dict[_MarkdownReferenceKey, tuple[str, ...]] = {}
     blocked_keys: set[_MarkdownReferenceKey] = set()
@@ -537,6 +553,23 @@ def _patch_from_reference(
         )
 
     return patched_content
+
+
+def _format_reference_urls_not_in_source_message(
+    reference_references: Sequence[_MarkdownReference],
+    reference_only_keys: set[_MarkdownReferenceKey],
+) -> str:
+    """Format warning for CMS reference URLs that no longer exist in source."""
+    missing_from_source = [reference for reference in reference_references if reference.key in reference_only_keys]
+
+    details = ", ".join(
+        f"{reference.kind} {reference.label!r} -> {reference.url!r}" for reference in missing_from_source
+    )
+
+    return (
+        f"CMS reference document contains {len(missing_from_source)} Markdown reference(s) "
+        f"that are not present in the source document: {details}"
+    )
 
 
 def _extract_markdown_references(

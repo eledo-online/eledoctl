@@ -50,6 +50,11 @@ class FakeNotFoundError(EledoApiError):
     status_code = 404
 
 
+class FakeInvalidPathError(EledoApiError):
+    def __init__(self, message: str) -> None:
+        Exception.__init__(self, message)
+
+
 def article_response(
     *,
     path_slug: str,
@@ -204,7 +209,7 @@ sidebar_position: 5
     plan = build_sync_plan(sync_options(root))
     cms = FakeCmsClient()
 
-    monkeypatch.setattr("eledoctl.internal.docs.uploader._is_not_found_error", lambda exc: True)
+    monkeypatch.setattr("eledoctl.internal.docs.uploader._is_missing_article_error", lambda exc: True)
 
     result = await sync_one_document(cms=cms, item=plan.items[0], options=sync_options(root))
 
@@ -340,7 +345,7 @@ async def test_sync_one_document_dry_run_does_not_upload(tmp_path: Path, monkeyp
     plan = build_sync_plan(sync_options(root, dry_run=True))
     cms = FakeCmsClient()
 
-    monkeypatch.setattr("eledoctl.internal.docs.uploader._is_not_found_error", lambda exc: True)
+    monkeypatch.setattr("eledoctl.internal.docs.uploader._is_missing_article_error", lambda exc: True)
 
     result = await sync_one_document(
         cms=cms,
@@ -451,4 +456,33 @@ sidebar_position: 9
     assert "expected article.markdown string" in result.messages[0].message
 
     assert cms.created == []
+    assert cms.updated == []
+
+
+@pytest.mark.asyncio
+async def test_sync_one_document_treats_invalid_path_retrieve_error_as_missing_article(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "docs"
+    write_file(root / "api" / "documents" / "download.mdx", "# Download\n")
+
+    plan = build_sync_plan(sync_options(root))
+    cms = FakeCmsClient()
+
+    async def fake_retrieve_article(path: tuple[str, ...]) -> CmsArticleRetrieveResponse:
+        raise FakeInvalidPathError("Invalid path")
+
+    cms.retrieve_article = fake_retrieve_article  # type: ignore[method-assign]
+
+    result = await sync_one_document(
+        cms=cms,
+        item=plan.items[0],
+        options=sync_options(root),
+    )
+
+    assert result.action == SyncAction.CREATE
+    assert result.status == SyncStatus.WARNING
+    assert result.uploaded is True
+    assert len(cms.created) == 1
     assert cms.updated == []

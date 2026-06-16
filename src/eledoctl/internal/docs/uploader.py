@@ -182,7 +182,7 @@ async def sync_one_document(
         existing = await cms.retrieve_article(item.target_segments)
         reference_doc = existing.article.markdown
     except EledoApiError as exc:
-        if not _is_not_found_error(exc):
+        if not _is_missing_article_error(exc):
             return _failure_result(
                 item=item,
                 dry_run=options.dry_run,
@@ -506,7 +506,7 @@ def _failure_result(
     )
 
 
-def _is_not_found_error(exc: EledoApiError) -> bool:
+def _is_missing_article_error(exc: EledoApiError) -> bool:
     status_code = getattr(exc, "status_code", None)
 
     if status_code == 404:
@@ -515,7 +515,12 @@ def _is_not_found_error(exc: EledoApiError) -> bool:
     response = getattr(exc, "response", None)
     response_status_code = getattr(response, "status_code", None)
 
-    return response_status_code == 404
+    if response_status_code == 404:
+        return True
+
+    message = str(exc).lower()
+
+    return "invalid path" in message
 
 
 def _result_to_log_record(result: SyncFileResult) -> dict[str, Any]:

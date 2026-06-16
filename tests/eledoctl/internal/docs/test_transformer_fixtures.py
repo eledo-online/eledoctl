@@ -110,9 +110,12 @@ def test_reference_links_fixture_removed_url_link_in_source_doc() -> None:
         options=options_only(patch_links_from_reference=True),
     )
 
-    assert result.status == TransformStatus.SUCCESS
+    assert result.status == TransformStatus.WARNING
     assert result.content == fixture("reference_links/expected_with_removed_url.mdx")
-    assert result.messages == ()
+
+    assert len(result.messages) == 1
+    assert result.messages[0].level == TransformMessageLevel.WARNING
+    assert result.messages[0].code == "reference_urls_not_in_source"
 
 
 def test_reference_links_fixture_no_reference_doc() -> None:
@@ -165,9 +168,12 @@ def test_reference_images_fixture_removed_image_link_in_source_doc() -> None:
         options=options_only(convert_supported_images=True, patch_images_from_reference=True),
     )
 
-    assert result.status == TransformStatus.SUCCESS
+    assert result.status == TransformStatus.WARNING
     assert result.content == fixture("reference_images/expected_with_removed_image.mdx")
-    assert result.messages == ()
+
+    assert len(result.messages) == 1
+    assert result.messages[0].level == TransformMessageLevel.WARNING
+    assert result.messages[0].code == "reference_urls_not_in_source"
 
 
 def test_reference_images_fixture_no_reference_doc() -> None:

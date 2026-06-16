@@ -529,3 +529,39 @@ def test_reference_images_with_duplicate_labels_warn_when_position_counts_differ
 
     assert len(result.messages) == 1
     assert result.messages[0].code == "ambiguous_reference_url_count_mismatch"
+
+def test_reference_links_warn_when_reference_contains_removed_source_link() -> None:
+    result = transform_document(
+        source_doc="""Read [Template Editor](./template-editor/index.mdx).
+""",
+        reference_doc="""Read [Template Editor](/documentation/template-editor).
+
+Also read [Data Input](/documentation/data-input).
+""",
+        options=options_only(patch_links_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.WARNING
+    assert result.content == """Read [Template Editor](/documentation/template-editor).
+"""
+
+    assert len(result.messages) == 1
+    assert result.messages[0].code == "reference_urls_not_in_source"
+
+def test_reference_images_warn_when_reference_contains_removed_source_image() -> None:
+    result = transform_document(
+        source_doc="""![Image](/img/source-one.png)
+""",
+        reference_doc="""![Image](/cms/one.png)
+
+![Removed Image](/cms/removed.png)
+""",
+        options=options_only(patch_images_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.WARNING
+    assert result.content == """![Image](/cms/one.png)
+"""
+
+    assert len(result.messages) == 1
+    assert result.messages[0].code == "reference_urls_not_in_source"

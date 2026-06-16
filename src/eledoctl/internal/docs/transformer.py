@@ -427,6 +427,7 @@ def _has_reference(reference_doc: str | None) -> bool:
     """Return whether a usable CMS reference document exists."""
     return reference_doc is not None and reference_doc.strip() != ""
 
+
 def _patch_from_reference(
     *,
     content: str,
@@ -553,26 +554,23 @@ def _patch_from_reference(
 
     return patched_content
 
+
 def _format_reference_urls_not_in_source_message(
     reference_references: Sequence[_MarkdownReference],
     reference_only_keys: set[_MarkdownReferenceKey],
 ) -> str:
     """Format warning for CMS reference URLs that no longer exist in source."""
-    missing_from_source = [
-        reference
-        for reference in reference_references
-        if reference.key in reference_only_keys
-    ]
+    missing_from_source = [reference for reference in reference_references if reference.key in reference_only_keys]
 
     details = ", ".join(
-        f"{reference.kind} {reference.label!r} -> {reference.url!r}"
-        for reference in missing_from_source
+        f"{reference.kind} {reference.label!r} -> {reference.url!r}" for reference in missing_from_source
     )
 
     return (
         f"CMS reference document contains {len(missing_from_source)} Markdown reference(s) "
         f"that are not present in the source document: {details}"
     )
+
 
 def _extract_markdown_references(
     content: str,

@@ -49,6 +49,7 @@ class FakeMalformedCmsClient(FakeCmsClient):
 class FakeNotFoundError(EledoApiError):
     status_code = 404
 
+
 class FakeInvalidPathError(EledoApiError):
     def __init__(self, message: str) -> None:
         Exception.__init__(self, message)

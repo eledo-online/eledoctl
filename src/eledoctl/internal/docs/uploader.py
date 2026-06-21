@@ -140,7 +140,7 @@ def build_sync_plan(options: SyncOptions) -> SyncPlan:
     files = _discover_files(selection)
     destination_segments = _destination_segments(options.destination_root)
 
-    items = tuple(
+    items = list(
         SyncItem(
             source_path=file,
             target_segments=_target_segments(
@@ -159,12 +159,14 @@ def build_sync_plan(options: SyncOptions) -> SyncPlan:
         for file in files
     )
 
+    items.sort(key=lambda item: (len(item.target_segments), item.target_segments, item.source_path))
+
     _validate_unique_targets(items)
 
     return SyncPlan(
         source_root=source_root,
         selection=selection,
-        items=items,
+        items=tuple(items),
     )
 
 
@@ -179,8 +181,9 @@ async def sync_one_document(
     reference_doc: str | None = None
 
     try:
-        existing = await cms.retrieve_article(item.target_segments)
-        reference_doc = existing.article.markdown
+        retrieved = await cms.retrieve_article(item.target_segments)
+        existing = retrieved
+        reference_doc = retrieved.article.markdown
     except EledoApiError as exc:
         if not _is_missing_article_error(exc):
             return _failure_result(
@@ -213,7 +216,7 @@ async def sync_one_document(
         options=options.transform_options,
     )
 
-    messages = _transform_messages(transform_result.messages)
+    messages = list(_transform_messages(transform_result.messages))
 
     title = _metadata_title(transform_result.metadata, item)
     order = _metadata_order(transform_result.metadata)
@@ -228,10 +231,8 @@ async def sync_one_document(
             uploaded=False,
             title=title,
             order=order,
-            messages=messages,
+            messages=tuple(messages),
         )
-
-    status = SyncStatus.WARNING if transform_result.status == TransformStatus.WARNING else SyncStatus.SUCCESS
 
     if (
         existing is not None
@@ -247,29 +248,56 @@ async def sync_one_document(
             source_path=item.source_path,
             target_path=item.target_path,
             action=SyncAction.SKIP_UNCHANGED,
-            status=status,
+            status=_status_from_messages(messages),
             dry_run=options.dry_run,
             uploaded=False,
             title=title,
             order=order,
+            messages=tuple(messages),
+        )
+
+    action = SyncAction.UPDATE if existing is not None else SyncAction.CREATE
+
+    if action == SyncAction.CREATE:
+        parents_ready = await _ensure_parent_articles(
+            cms=cms,
+            target_segments=item.target_segments,
+            destination_root_segments=_cms_path_segments(options.destination_root),
+            label=options.tag,
+            dry_run=options.dry_run,
             messages=messages,
         )
+
+        if not parents_ready:
+            return SyncFileResult(
+                source_path=item.source_path,
+                target_path=item.target_path,
+                action=SyncAction.FAILED,
+                status=SyncStatus.FAILURE,
+                dry_run=options.dry_run,
+                uploaded=False,
+                title=title,
+                order=order,
+                messages=tuple(messages),
+            )
+
+    status = _status_from_messages(messages)
 
     if options.dry_run:
         return SyncFileResult(
             source_path=item.source_path,
             target_path=item.target_path,
-            action=SyncAction.UPDATE if existing is not None else SyncAction.CREATE,
+            action=action,
             status=status,
             dry_run=True,
             uploaded=False,
             title=title,
             order=order,
-            messages=messages,
+            messages=tuple(messages),
         )
 
     try:
-        if existing is None:
+        if action == SyncAction.CREATE:
             await cms.create_article(
                 path=item.target_segments,
                 label=options.tag,
@@ -280,7 +308,6 @@ async def sync_one_document(
                     markdown=transform_result.content,
                 ),
             )
-            action = SyncAction.CREATE
         else:
             await cms.update_article(
                 path=item.target_segments,
@@ -292,8 +319,15 @@ async def sync_one_document(
                     markdown=transform_result.content,
                 ),
             )
-            action = SyncAction.UPDATE
     except EledoApiError as exc:
+        messages.append(
+            SyncMessage(
+                level=TransformMessageLevel.ERROR.value,
+                code="cms_upload_failed",
+                message=str(exc),
+            )
+        )
+
         return SyncFileResult(
             source_path=item.source_path,
             target_path=item.target_path,
@@ -303,14 +337,7 @@ async def sync_one_document(
             uploaded=False,
             title=title,
             order=order,
-            messages=(
-                *messages,
-                SyncMessage(
-                    level=TransformMessageLevel.ERROR.value,
-                    code="cms_upload_failed",
-                    message=str(exc),
-                ),
-            ),
+            messages=tuple(messages),
         )
 
     return SyncFileResult(
@@ -322,8 +349,19 @@ async def sync_one_document(
         uploaded=True,
         title=title,
         order=order,
-        messages=messages,
+        messages=tuple(messages),
     )
+
+
+def _status_from_messages(messages: Sequence[SyncMessage]) -> SyncStatus:
+    """Derive sync status from accumulated messages."""
+    if any(message.level == TransformMessageLevel.ERROR.value for message in messages):
+        return SyncStatus.FAILURE
+
+    if any(message.level == TransformMessageLevel.WARNING.value for message in messages):
+        return SyncStatus.WARNING
+
+    return SyncStatus.SUCCESS
 
 
 def summarize_results(results: Sequence[SyncFileResult], *, dry_run: bool) -> SyncSummary:
@@ -411,7 +449,7 @@ def _target_segments(
     else:
         parts[-1] = stem
 
-    return (*destination_segments, *parts)
+    return *destination_segments, *parts
 
 
 def _target_path(segments: Sequence[str]) -> str:
@@ -542,3 +580,102 @@ def _result_to_log_record(result: SyncFileResult) -> dict[str, Any]:
             for message in result.messages
         ],
     }
+
+
+def _cms_path_segments(path: str) -> tuple[str, ...]:
+    """Split a CMS path such as /documentation/api into path segments."""
+    return tuple(part for part in path.strip("/").split("/") if part)
+
+
+def _parent_paths(path: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
+    """Return parent CMS paths for a target path, from root parent to direct parent."""
+    return tuple(path[:index] for index in range(1, len(path)))
+
+
+async def _ensure_parent_articles(
+    *,
+    cms: CmsClient,
+    target_segments: tuple[str, ...],
+    destination_root_segments: tuple[str, ...],
+    label: str,
+    dry_run: bool,
+    messages: list[SyncMessage],
+) -> bool:
+    """Ensure parent CMS articles exist before creating a child article.
+
+    Destination root must already exist. Intermediate parents may be created
+    as empty placeholder articles so deep single-file uploads can succeed.
+    """
+    for parent_path in _parent_paths(target_segments):
+        try:
+            await cms.retrieve_article(parent_path)
+            continue
+        except EledoInvalidResponseError as exc:
+            messages.append(
+                SyncMessage(
+                    level=TransformMessageLevel.ERROR,
+                    code="cms_parent_invalid_response",
+                    message=f"Invalid CMS response for parent path {_target_path(parent_path)}: {exc}",
+                )
+            )
+            return False
+        except EledoApiError as exc:
+            if not _is_missing_article_error(exc):
+                messages.append(
+                    SyncMessage(
+                        level=TransformMessageLevel.ERROR,
+                        code="cms_parent_check_failed",
+                        message=f"Failed to check parent path {_target_path(parent_path)}: {exc}",
+                    )
+                )
+                return False
+
+        if parent_path == destination_root_segments:
+            messages.append(
+                SyncMessage(
+                    level=TransformMessageLevel.ERROR,
+                    code="destination_root_missing",
+                    message=(
+                        f"Destination root {_target_path(parent_path)} does not exist. "
+                        "Refusing to create it automatically."
+                    ),
+                )
+            )
+            return False
+
+        slug = parent_path[-1]
+        action_code = "cms_parent_would_be_created" if dry_run else "cms_parent_created"
+
+        messages.append(
+            SyncMessage(
+                level=TransformMessageLevel.WARNING,
+                code=action_code,
+                message=f"Parent path {_target_path(parent_path)} did not exist.",
+            )
+        )
+
+        if dry_run:
+            continue
+
+        try:
+            await cms.create_article(
+                path=parent_path,
+                label=label,
+                request=CmsArticleCreateRequest(
+                    title=_title_from_slug(slug),
+                    slug=slug,
+                    markdown="",
+                    ord=None,
+                ),
+            )
+        except EledoApiError as exc:
+            messages.append(
+                SyncMessage(
+                    level=TransformMessageLevel.ERROR,
+                    code="cms_parent_upload_failed",
+                    message=f"Failed to create parent path {_target_path(parent_path)}: {exc}",
+                )
+            )
+            return False
+
+    return True

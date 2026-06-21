@@ -8,8 +8,12 @@ import pytest
 
 from eledoctl.internal.docs.uploader import (
     SyncAction,
+    SyncItem,
+    SyncMessage,
     SyncOptions,
     SyncStatus,
+    TransformStatus,
+    _ensure_parent_articles,
     build_sync_plan,
     summarize_results,
     sync_one_document,
@@ -17,7 +21,7 @@ from eledoctl.internal.docs.uploader import (
     write_log_file,
 )
 from pyeledo import EledoApiError, EledoInvalidResponseError
-from pyeledo.internal.cms import CmsArticle, CmsArticleRetrieveResponse
+from pyeledo.internal.cms import CmsArticle, CmsArticleCreateRequest, CmsArticleRetrieveResponse
 
 
 class FakeCmsClient:
@@ -30,14 +34,42 @@ class FakeCmsClient:
         try:
             return self.existing[path]
         except KeyError as exc:
-            raise FakeNotFoundError("not found") from exc
+            raise FakeInvalidPathError("Invalid path") from exc
 
-    async def create_article(self, *, path: tuple[str, ...], request: Any, label: str | None = None) -> dict[str, Any]:
+    async def create_article(
+        self,
+        *,
+        path: tuple[str, ...],
+        request: Any,
+        label: str | None = None,
+    ) -> dict[str, Any]:
         self.created.append({"path": path, "request": request, "label": label})
+
+        self.existing[path] = cms_response(
+            title=request.title,
+            slug=request.slug,
+            markdown=request.markdown,
+            ordr=getattr(request, "ord", None),
+        )
+
         return {"ok": True}
 
-    async def update_article(self, *, path: tuple[str, ...], request: Any, label: str | None = None) -> dict[str, Any]:
+    async def update_article(
+        self,
+        *,
+        path: tuple[str, ...],
+        request: Any,
+        label: str | None = None,
+    ) -> dict[str, Any]:
         self.updated.append({"path": path, "request": request, "label": label})
+
+        self.existing[path] = cms_response(
+            title=request.title,
+            slug=request.slug,
+            markdown=request.markdown,
+            ordr=getattr(request, "ordr", None),
+        )
+
         return {"ok": True}
 
 
@@ -53,6 +85,55 @@ class FakeNotFoundError(EledoApiError):
 class FakeInvalidPathError(EledoApiError):
     def __init__(self, message: str) -> None:
         Exception.__init__(self, message)
+
+
+class FakeParentCmsClient:
+    def __init__(self, existing_paths: set[tuple[str, ...]]) -> None:
+        self.existing_paths = set(existing_paths)
+        self.created: list[tuple[tuple[str, ...], str | None, CmsArticleCreateRequest]] = []
+
+    async def retrieve_article(self, path: tuple[str, ...]) -> object:
+        if path in self.existing_paths:
+            return object()
+
+        raise EledoApiError("Invalid path")
+
+    async def create_article(
+        self,
+        path: tuple[str, ...],
+        *,
+        label: str | None = None,
+        request: CmsArticleCreateRequest,
+    ) -> object:
+        self.existing_paths.add(path)
+        self.created.append((path, label, request))
+        return object()
+
+
+def cms_response(
+    *,
+    title: str,
+    slug: str,
+    markdown: str,
+    ordr: int,
+) -> CmsArticleRetrieveResponse:
+    return CmsArticleRetrieveResponse(
+        article=CmsArticle(
+            id=f"article-{slug}",
+            version=1,
+            title=title,
+            slug=slug,
+            parent_id=None,
+            ordr=ordr,
+            published=False,
+            platform=None,
+            nomenu=False,
+            index=False,
+            description=None,
+            markdown=markdown,
+        ),
+        children=(),
+    )
 
 
 def article_response(
@@ -207,7 +288,28 @@ sidebar_position: 5
 """,
     )
     plan = build_sync_plan(sync_options(root))
-    cms = FakeCmsClient()
+    cms = FakeCmsClient(
+        existing={
+            ("documentation",): cms_response(
+                title="Documentation",
+                slug="documentation",
+                markdown="",
+                ordr=0,
+            ),
+            ("documentation", "api"): cms_response(
+                title="Api",
+                slug="api",
+                markdown="",
+                ordr=0,
+            ),
+            ("documentation", "api", "documents"): cms_response(
+                title="Documents",
+                slug="documents",
+                markdown="",
+                ordr=0,
+            ),
+        }
+    )
 
     monkeypatch.setattr("eledoctl.internal.docs.uploader._is_missing_article_error", lambda exc: True)
 
@@ -343,7 +445,28 @@ async def test_sync_one_document_dry_run_does_not_upload(tmp_path: Path, monkeyp
     root = tmp_path / "docs"
     write_file(root / "api" / "documents" / "download.mdx", "# Download\n")
     plan = build_sync_plan(sync_options(root, dry_run=True))
-    cms = FakeCmsClient()
+    cms = FakeCmsClient(
+        existing={
+            ("documentation",): cms_response(
+                title="Documentation",
+                slug="documentation",
+                markdown="",
+                ordr=0,
+            ),
+            ("documentation", "api"): cms_response(
+                title="Api",
+                slug="api",
+                markdown="",
+                ordr=0,
+            ),
+            ("documentation", "api", "documents"): cms_response(
+                title="Documents",
+                slug="documents",
+                markdown="",
+                ordr=0,
+            ),
+        }
+    )
 
     monkeypatch.setattr("eledoctl.internal.docs.uploader._is_missing_article_error", lambda exc: True)
 
@@ -468,21 +591,209 @@ async def test_sync_one_document_treats_invalid_path_retrieve_error_as_missing_a
     write_file(root / "api" / "documents" / "download.mdx", "# Download\n")
 
     plan = build_sync_plan(sync_options(root))
-    cms = FakeCmsClient()
+    item = plan.items[0]
+
+    cms = FakeCmsClient(
+        existing={
+            ("documentation",): cms_response(
+                title="Documentation",
+                slug="documentation",
+                markdown="",
+                ordr=0,
+            ),
+            ("documentation", "api"): cms_response(
+                title="Api",
+                slug="api",
+                markdown="",
+                ordr=0,
+            ),
+            ("documentation", "api", "documents"): cms_response(
+                title="Documents",
+                slug="documents",
+                markdown="",
+                ordr=0,
+            ),
+        }
+    )
+
+    original_retrieve_article = cms.retrieve_article
 
     async def fake_retrieve_article(path: tuple[str, ...]) -> CmsArticleRetrieveResponse:
-        raise FakeInvalidPathError("Invalid path")
+        if path == item.target_segments:
+            raise FakeInvalidPathError("Invalid path")
 
-    cms.retrieve_article = fake_retrieve_article  # type: ignore[method-assign]
+        return await original_retrieve_article(path)
+
+    monkeypatch.setattr(cms, "retrieve_article", fake_retrieve_article)
 
     result = await sync_one_document(
         cms=cms,
-        item=plan.items[0],
+        item=item,
         options=sync_options(root),
     )
 
     assert result.action == SyncAction.CREATE
     assert result.status == SyncStatus.WARNING
     assert result.uploaded is True
+
     assert len(cms.created) == 1
+    assert cms.created[0]["path"] == ("documentation", "api", "documents", "download")
     assert cms.updated == []
+
+
+@pytest.mark.asyncio
+async def test_ensure_parent_articles_creates_missing_intermediate_parents() -> None:
+    cms = FakeParentCmsClient(existing_paths={("documentation",)})
+    messages: list[SyncMessage] = []
+
+    result = await _ensure_parent_articles(
+        cms=cms,  # type: ignore[arg-type]
+        target_segments=("documentation", "api", "documents", "download"),
+        destination_root_segments=("documentation",),
+        label="docs-sync-test",
+        dry_run=False,
+        messages=messages,
+    )
+
+    assert result is True
+
+    assert [created[0] for created in cms.created] == [
+        ("documentation", "api"),
+        ("documentation", "api", "documents"),
+    ]
+
+    assert [created[1] for created in cms.created] == [
+        "docs-sync-test",
+        "docs-sync-test",
+    ]
+
+    assert cms.created[0][2].slug == "api"
+    assert cms.created[0][2].title == "Api"
+    assert cms.created[0][2].markdown == ""
+    assert cms.created[0][2].ord is None
+
+    assert cms.created[1][2].slug == "documents"
+    assert cms.created[1][2].title == "Documents"
+    assert cms.created[1][2].markdown == ""
+    assert cms.created[1][2].ord is None
+
+    assert [message.code for message in messages] == [
+        "cms_parent_created",
+        "cms_parent_created",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ensure_parent_articles_refuses_to_create_destination_root() -> None:
+    cms = FakeParentCmsClient(existing_paths=set())
+    messages: list[SyncMessage] = []
+
+    result = await _ensure_parent_articles(
+        cms=cms,  # type: ignore[arg-type]
+        target_segments=("documentation", "api", "documents", "download"),
+        destination_root_segments=("documentation",),
+        label="docs-sync-test",
+        dry_run=False,
+        messages=messages,
+    )
+
+    assert result is False
+    assert cms.created == []
+
+    assert [message.code for message in messages] == [
+        "destination_root_missing",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_one_document_fails_when_destination_root_is_missing(tmp_path: Path) -> None:
+    source_root = tmp_path / "docs"
+    source_root.mkdir()
+
+    source_file = source_root / "download.mdx"
+    source_file.write_text(
+        "---\ntitle: Download\nsidebar_position: 4\n---\n\n# Download\n",
+        encoding="utf-8",
+    )
+
+    item = SyncItem(
+        source_path=source_file,
+        target_segments=("documentation", "download"),
+        target_path="/documentation/download",
+    )
+
+    cms = FakeCmsClient(existing=None)
+
+    result = await sync_one_document(
+        cms=cms,  # type: ignore[arg-type]
+        item=item,
+        options=SyncOptions(
+            source_root=source_root,
+            selection=source_file,
+            destination_root="/documentation",
+            tag="docs-sync-test",
+        ),
+    )
+
+    assert result.action == SyncAction.FAILED
+    assert result.status == TransformStatus.FAILURE
+    assert result.uploaded is False
+    assert [message.code for message in result.messages] == [
+        "missing_reference_doc",
+        "destination_root_missing",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_one_document_creates_missing_intermediate_parents(tmp_path: Path) -> None:
+    source_root = tmp_path / "docs"
+    source_file = source_root / "api" / "documents" / "download.mdx"
+    source_file.parent.mkdir(parents=True)
+
+    source_file.write_text(
+        "---\ntitle: Download\nsidebar_position: 4\n---\n\n# Download\n",
+        encoding="utf-8",
+    )
+
+    item = SyncItem(
+        source_path=source_file,
+        target_segments=("documentation", "api", "documents", "download"),
+        target_path="/documentation/api/documents/download",
+    )
+
+    cms = FakeCmsClient(
+        existing={
+            ("documentation",): cms_response(
+                title="Documentation",
+                slug="documentation",
+                markdown="",
+                ordr=None,
+            ),
+        }
+    )
+
+    result = await sync_one_document(
+        cms=cms,  # type: ignore[arg-type]
+        item=item,
+        options=SyncOptions(
+            source_root=source_root,
+            selection=source_file,
+            destination_root="/documentation",
+            tag="docs-sync-test",
+        ),
+    )
+
+    assert result.action == SyncAction.CREATE
+    assert result.uploaded is True
+
+    assert [entry["path"] for entry in cms.created] == [
+        ("documentation", "api"),
+        ("documentation", "api", "documents"),
+        ("documentation", "api", "documents", "download"),
+    ]
+
+    assert [entry["request"].markdown for entry in cms.created] == [
+        "",
+        "",
+        "# Download\n",
+    ]

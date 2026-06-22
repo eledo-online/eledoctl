@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import yaml
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -25,7 +26,8 @@ from pyeledo.internal.cms import (
     CmsClient,
 )
 
-DOC_EXTENSIONS = {".md", ".mdx"}
+_DOC_EXTENSIONS = {".md", ".mdx"}
+_CATEGORY_FILENAMES = ("_category_.yml", "_category_.yaml")
 
 
 class SyncAction(StrEnum):
@@ -425,7 +427,7 @@ def _discover_files(selection: Path) -> tuple[Path, ...]:
 
 
 def _is_document_file(path: Path) -> bool:
-    return path.is_file() and path.suffix.lower() in DOC_EXTENSIONS
+    return path.is_file() and path.suffix.lower() in _DOC_EXTENSIONS
 
 
 def _destination_segments(destination_root: str) -> tuple[str, ...]:
@@ -476,12 +478,58 @@ def _validate_unique_targets(items: Sequence[SyncItem]) -> None:
 
 
 def _metadata_title(metadata: Mapping[str, FrontmatterValue], item: SyncItem) -> str:
+    """Resolve CMS article title from source metadata and file location."""
+    if _is_index_document(item.source_path):
+        category_label = _category_label(item.source_path.parent)
+
+        if category_label is not None:
+            return category_label
+
+        return _title_from_slug(item.target_segments[-1])
+
     value = metadata.get("title")
 
-    if isinstance(value, str) and value.strip():
-        return value.strip()
+    if isinstance(value, str):
+        title = value.strip()
+
+        if title:
+            return title
 
     return _title_from_slug(item.target_segments[-1])
+
+
+def _is_index_document(path: Path) -> bool:
+    """Return whether the source document is an index document."""
+    return path.stem == "index" and path.suffix in {".md", ".mdx"}
+
+
+def _category_label(directory: Path) -> str | None:
+    """Read Docusaurus category label from _category_.yml when available."""
+    for filename in _CATEGORY_FILENAMES:
+        path = directory / filename
+
+        if not path.is_file():
+            continue
+
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        label = data.get("label")
+
+        if not isinstance(label, str):
+            return None
+
+        label = label.strip()
+
+        if label:
+            return label
+
+    return None
 
 
 def _metadata_order(metadata: Mapping[str, FrontmatterValue]) -> int | None:

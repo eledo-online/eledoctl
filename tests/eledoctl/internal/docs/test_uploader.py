@@ -19,6 +19,7 @@ from eledoctl.internal.docs.uploader import (
     sync_one_document,
     write_inspection_file,
     write_log_file,
+    _metadata_title
 )
 from pyeledo import EledoApiError, EledoInvalidResponseError
 from pyeledo.internal.cms import CmsArticle, CmsArticleCreateRequest, CmsArticleRetrieveResponse
@@ -842,3 +843,53 @@ async def test_sync_one_document_updates_when_description_changes(tmp_path: Path
     assert cms.created == []
     assert len(cms.updated) == 1
     assert cms.updated[0]["request"].description == "New SEO description."
+
+def test_metadata_title_uses_category_label_for_index_document(tmp_path: Path) -> None:
+    directory = tmp_path / "docs" / "integrations" / "make"
+    directory.mkdir(parents=True)
+
+    source_path = directory / "index.mdx"
+    source_path.write_text("---\ntitle: Overview\n---\n\n# Overview\n", encoding="utf-8")
+
+    (directory / "_category_.yml").write_text(
+        "label: Make\nposition: 2\n",
+        encoding="utf-8",
+    )
+
+    item = SyncItem(
+        source_path=source_path,
+        target_segments=("documentation", "integrations", "make"),
+        target_path="/documentation/integrations/make",
+    )
+
+    assert _metadata_title({"title": "Overview"}, item) == "Make"
+
+
+def test_metadata_title_uses_target_segment_for_index_without_category(tmp_path: Path) -> None:
+    directory = tmp_path / "docs" / "integrations" / "make"
+    directory.mkdir(parents=True)
+
+    source_path = directory / "index.mdx"
+    source_path.write_text("---\ntitle: Overview\n---\n\n# Overview\n", encoding="utf-8")
+
+    item = SyncItem(
+        source_path=source_path,
+        target_segments=("documentation", "integrations", "make"),
+        target_path="/documentation/integrations/make",
+    )
+
+    assert _metadata_title({"title": "Overview"}, item) == "Make"
+
+
+def test_metadata_title_uses_frontmatter_for_non_index_document(tmp_path: Path) -> None:
+    source_path = tmp_path / "docs" / "api" / "authentication.mdx"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("---\ntitle: Authentication\n---\n\n# Authentication\n", encoding="utf-8")
+
+    item = SyncItem(
+        source_path=source_path,
+        target_segments=("documentation", "api", "authentication"),
+        target_path="/documentation/api/authentication",
+    )
+
+    assert _metadata_title({"title": "Authentication"}, item) == "Authentication"

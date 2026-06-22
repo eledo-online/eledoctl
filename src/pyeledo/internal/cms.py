@@ -33,6 +33,7 @@ class CmsArticleUpdateRequest:
     markdown: str
     ordr: int | None = None
     description: str | None = None
+    published: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +163,9 @@ def build_update_article_payload(request: CmsArticleUpdateRequest) -> JsonObject
 
     if request.ordr is not None:
         payload["ordr"] = request.ordr
+
+    if request.published is not None:
+        payload["published"] = request.published
 
     return payload
 

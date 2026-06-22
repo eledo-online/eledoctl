@@ -19,6 +19,7 @@ from eledoctl.internal.docs.uploader import (
     SyncOptions,
     build_sync_plan,
     summarize_results,
+    sync_missing_cms_children,
     sync_one_document,
     write_inspection_file,
     write_log_file,
@@ -94,6 +95,15 @@ def internal_docs_group() -> None:
     multiple=True,
     help="Disable one transformer stage. May be repeated.",
 )
+@click.option(
+    "--unpublish-missing/--no-unpublish-missing",
+    default=False,
+    show_default=True,
+    help=(
+        "Unpublish CMS children that exist under the selected subtree but no longer exist "
+        "in the source tree. Skipped for single-file sync."
+    ),
+)
 def sync_docs(
     *,
     source_root: Path,
@@ -102,6 +112,7 @@ def sync_docs(
     tag: str,
     dry_run: bool,
     skip_unchanged: bool,
+    unpublish_missing: bool,
     log_file: Path | None,
     inspect_file: Path | None,
     progress: bool,
@@ -117,6 +128,7 @@ def sync_docs(
         tag=tag,
         dry_run=dry_run,
         skip_unchanged=skip_unchanged,
+        unpublish_missing=unpublish_missing,
         transform_options=_transform_options(disable_transform),
     )
 
@@ -157,6 +169,7 @@ def sync_docs(
     click.echo(f"  created: {summary.created}")
     click.echo(f"  updated: {summary.updated}")
     click.echo(f"  skipped: {summary.skipped}")
+    click.echo(f"  unpublished: {summary.unpublished}")
     click.echo(f"  warnings: {summary.warnings}")
     click.echo(f"  failures: {summary.failures}")
 
@@ -175,6 +188,14 @@ async def _sync_docs(
 
     async with EledoClient(base_url=settings.base_url, token=settings.token) as client:
         cms = CmsClient(client)
+
+        results.extend(
+            await sync_missing_cms_children(
+                cms=cms,
+                items=items,
+                options=options,
+            )
+        )
 
         if show_progress:
             with click.progressbar(

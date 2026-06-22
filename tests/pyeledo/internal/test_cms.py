@@ -294,6 +294,7 @@ async def test_write_response_may_be_empty(mock_transport) -> None:
 
     assert result == {}
 
+
 def test_parse_article_allows_null_markdown() -> None:
     article = parse_article(
         {
@@ -313,6 +314,7 @@ def test_parse_article_allows_null_markdown() -> None:
     )
 
     assert article.markdown is None
+
 
 def test_parse_article_rejects_invalid_markdown_type() -> None:
     with pytest.raises(EledoInvalidResponseError):

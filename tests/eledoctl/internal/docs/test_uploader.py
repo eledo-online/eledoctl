@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -14,15 +15,16 @@ from eledoctl.internal.docs.uploader import (
     SyncStatus,
     TransformStatus,
     _ensure_parent_articles,
+    _metadata_title,
     build_sync_plan,
     summarize_results,
+    sync_missing_cms_children,
     sync_one_document,
     write_inspection_file,
     write_log_file,
-    _metadata_title
 )
 from pyeledo import EledoApiError, EledoInvalidResponseError
-from pyeledo.internal.cms import CmsArticle, CmsArticleCreateRequest, CmsArticleRetrieveResponse
+from pyeledo.internal.cms import CmsArticle, CmsArticleChild, CmsArticleCreateRequest, CmsArticleRetrieveResponse
 
 
 class FakeCmsClient:
@@ -64,11 +66,18 @@ class FakeCmsClient:
     ) -> dict[str, Any]:
         self.updated.append({"path": path, "request": request, "label": label})
 
+        existing = self.existing.get(path)
+
         self.existing[path] = cms_response(
             title=request.title,
             slug=request.slug,
             markdown=request.markdown,
             ordr=getattr(request, "ordr", None),
+            description=getattr(request, "description", None),
+            published=getattr(request, "published", None)
+            if getattr(request, "published", None) is not None
+            else (existing.article.published if existing is not None else True),
+            children=existing.children if existing is not None else (),
         )
 
         return {"ok": True}
@@ -118,6 +127,8 @@ def cms_response(
     markdown: str | None,
     ordr: int | None = None,
     description: str | None = None,
+    published: bool = True,
+    children: Sequence[CmsArticleChild] = (),
 ) -> CmsArticleRetrieveResponse:
     return CmsArticleRetrieveResponse(
         article=CmsArticle(
@@ -126,15 +137,23 @@ def cms_response(
             title=title,
             slug=slug,
             parent_id=None,
-            ordr=ordr,
-            published=False,
+            ordr=ordr or 0,
+            published=published,
             platform=None,
             nomenu=False,
             index=False,
             description=description,
             markdown=markdown,
         ),
-        children=(),
+        children=tuple(children),
+    )
+
+
+def cms_child(*, slug: str) -> CmsArticleChild:
+    return CmsArticleChild(
+        id=f"child-{slug}",
+        version=1,
+        slug=slug,
     )
 
 
@@ -844,6 +863,7 @@ async def test_sync_one_document_updates_when_description_changes(tmp_path: Path
     assert len(cms.updated) == 1
     assert cms.updated[0]["request"].description == "New SEO description."
 
+
 def test_metadata_title_uses_category_label_for_index_document(tmp_path: Path) -> None:
     directory = tmp_path / "docs" / "integrations" / "make"
     directory.mkdir(parents=True)
@@ -893,3 +913,182 @@ def test_metadata_title_uses_frontmatter_for_non_index_document(tmp_path: Path) 
     )
 
     assert _metadata_title({"title": "Authentication"}, item) == "Authentication"
+
+
+@pytest.mark.asyncio
+async def test_sync_missing_cms_children_dry_run_reports_stale_child(tmp_path: Path) -> None:
+    source_root = tmp_path / "docs"
+    write_file(source_root / "api" / "authentication.mdx", "# Authentication\n")
+
+    plan = build_sync_plan(
+        SyncOptions(
+            source_root=source_root,
+            selection=source_root / "api",
+            destination_root="/documentation",
+            tag="docs-sync-test",
+            dry_run=True,
+            unpublish_missing=True,
+        )
+    )
+
+    cms = FakeCmsClient(
+        existing={
+            ("documentation", "api"): cms_response(
+                title="Api",
+                slug="api",
+                markdown="# API\n",
+                children=(
+                    cms_child(slug="authentication"),
+                    cms_child(slug="old-page"),
+                ),
+            ),
+            ("documentation", "api", "authentication"): cms_response(
+                title="Authentication",
+                slug="authentication",
+                markdown="# Authentication\n",
+            ),
+            ("documentation", "api", "old-page"): cms_response(
+                title="Old Page",
+                slug="old-page",
+                markdown="# Old Page\n",
+            ),
+        }
+    )
+
+    results = await sync_missing_cms_children(
+        cms=cms,  # type: ignore[arg-type]
+        items=plan.items,
+        options=SyncOptions(
+            source_root=source_root,
+            selection=source_root / "api",
+            destination_root="/documentation",
+            tag="docs-sync-test",
+            dry_run=True,
+            unpublish_missing=True,
+        ),
+    )
+
+    assert len(results) == 1
+
+    result = results[0]
+
+    assert result.source_path is None
+    assert result.target_path == "/documentation/api/old-page"
+    assert result.action == SyncAction.UNPUBLISH
+    assert result.status == SyncStatus.WARNING
+    assert result.dry_run is True
+    assert result.uploaded is False
+    assert [message.code for message in result.messages] == [
+        "cms_child_would_be_unpublished",
+    ]
+
+    assert cms.updated == []
+
+
+@pytest.mark.asyncio
+async def test_sync_missing_cms_children_unpublishes_stale_child(tmp_path: Path) -> None:
+    source_root = tmp_path / "docs"
+    write_file(source_root / "api" / "authentication.mdx", "# Authentication\n")
+
+    options = SyncOptions(
+        source_root=source_root,
+        selection=source_root / "api",
+        destination_root="/documentation",
+        tag="docs-sync-test",
+        dry_run=False,
+        unpublish_missing=True,
+    )
+
+    plan = build_sync_plan(options)
+
+    cms = FakeCmsClient(
+        existing={
+            ("documentation", "api"): cms_response(
+                title="Api",
+                slug="api",
+                markdown="# API\n",
+                children=(
+                    cms_child(slug="authentication"),
+                    cms_child(slug="old-page"),
+                ),
+            ),
+            ("documentation", "api", "authentication"): cms_response(
+                title="Authentication",
+                slug="authentication",
+                markdown="# Authentication\n",
+            ),
+            ("documentation", "api", "old-page"): cms_response(
+                title="Old Page",
+                slug="old-page",
+                markdown="# Old Page\n",
+                published=True,
+            ),
+        }
+    )
+
+    results = await sync_missing_cms_children(
+        cms=cms,  # type: ignore[arg-type]
+        items=plan.items,
+        options=options,
+    )
+
+    assert len(results) == 1
+
+    result = results[0]
+
+    assert result.source_path is None
+    assert result.target_path == "/documentation/api/old-page"
+    assert result.action == SyncAction.UNPUBLISH
+    assert result.status == SyncStatus.WARNING
+    assert result.dry_run is False
+    assert result.uploaded is True
+
+    assert len(cms.updated) == 1
+    assert cms.updated[0]["path"] == ("documentation", "api", "old-page")
+    assert cms.updated[0]["request"].published is False
+
+
+@pytest.mark.asyncio
+async def test_sync_missing_cms_children_skips_single_file_selection(tmp_path: Path) -> None:
+    source_root = tmp_path / "docs"
+    source_file = source_root / "api" / "authentication.mdx"
+    write_file(source_file, "# Authentication\n")
+
+    options = SyncOptions(
+        source_root=source_root,
+        selection=source_file,
+        destination_root="/documentation",
+        tag="docs-sync-test",
+        dry_run=False,
+        unpublish_missing=True,
+    )
+
+    plan = build_sync_plan(options)
+
+    cms = FakeCmsClient(
+        existing={
+            ("documentation", "api"): cms_response(
+                title="Api",
+                slug="api",
+                markdown="# API\n",
+                children=(
+                    cms_child(slug="authentication"),
+                    cms_child(slug="old-page"),
+                ),
+            ),
+            ("documentation", "api", "old-page"): cms_response(
+                title="Old Page",
+                slug="old-page",
+                markdown="# Old Page\n",
+            ),
+        }
+    )
+
+    results = await sync_missing_cms_children(
+        cms=cms,  # type: ignore[arg-type]
+        items=plan.items,
+        options=options,
+    )
+
+    assert results == ()
+    assert cms.updated == []

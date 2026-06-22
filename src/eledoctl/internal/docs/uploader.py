@@ -500,7 +500,9 @@ def _is_unchanged(
     title: str,
     order: int | None,
 ) -> bool:
-    if existing.article.markdown != markdown:
+    existing_markdown = existing.article.markdown or ""
+    
+    if existing_markdown != markdown:
         return False
 
     if existing.article.title != title:

@@ -48,7 +48,7 @@ class CmsArticle:
     nomenu: bool
     index: bool
     description: str | None
-    markdown: str
+    markdown: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,7 +198,7 @@ def parse_article(data: JsonObject) -> CmsArticle:
         nomenu=_required_bool(data, "nomenu", "article"),
         index=_required_bool(data, "index", "article"),
         description=_optional_string(data, "description", "article"),
-        markdown=_required_string(data, "markdown", "article"),
+        markdown=_optional_string(data, "markdown", "article"),
     )
 
 

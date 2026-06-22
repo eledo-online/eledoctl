@@ -9,6 +9,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from eledoctl.internal.docs.transformer import (
     FrontmatterValue,
     TransformMessage,
@@ -25,7 +27,8 @@ from pyeledo.internal.cms import (
     CmsClient,
 )
 
-DOC_EXTENSIONS = {".md", ".mdx"}
+_DOC_EXTENSIONS = {".md", ".mdx"}
+_CATEGORY_FILENAMES = ("_category_.yml", "_category_.yaml")
 
 
 class SyncAction(StrEnum):
@@ -34,6 +37,7 @@ class SyncAction(StrEnum):
     CREATE = "create"
     UPDATE = "update"
     SKIP_UNCHANGED = "skip-unchanged"
+    UNPUBLISH = "unpublish"
     FAILED = "failed"
 
 
@@ -64,6 +68,7 @@ class SyncOptions:
     tag: str = ""
     dry_run: bool = False
     skip_unchanged: bool = True
+    unpublish_missing: bool = False
     transform_options: TransformOptions = field(default_factory=TransformOptions)
 
 
@@ -89,7 +94,7 @@ class SyncPlan:
 class SyncFileResult:
     """Result for one synced source file."""
 
-    source_path: Path
+    source_path: Path | None
     target_path: str
     action: SyncAction
     status: SyncStatus
@@ -97,7 +102,7 @@ class SyncFileResult:
     uploaded: bool
     title: str | None = None
     order: int | None = None
-    messages: tuple[SyncMessage, ...] = ()
+    messages: Sequence[SyncMessage] = ()
 
     @property
     def requires_inspection(self) -> bool:
@@ -113,6 +118,7 @@ class SyncSummary:
     created: int
     updated: int
     skipped: int
+    unpublished: int
     warnings: int
     failures: int
     dry_run: bool
@@ -220,6 +226,7 @@ async def sync_one_document(
 
     title = _metadata_title(transform_result.metadata, item)
     order = _metadata_order(transform_result.metadata)
+    description = _metadata_description(transform_result.metadata)
 
     if transform_result.status == TransformStatus.FAILURE:
         return SyncFileResult(
@@ -242,6 +249,7 @@ async def sync_one_document(
             markdown=transform_result.content,
             title=title,
             order=order,
+            description=description,
         )
     ):
         return SyncFileResult(
@@ -306,6 +314,7 @@ async def sync_one_document(
                     slug=item.target_segments[-1],
                     ord=order,
                     markdown=transform_result.content,
+                    description=description,
                 ),
             )
         else:
@@ -317,6 +326,7 @@ async def sync_one_document(
                     slug=item.target_segments[-1],
                     ordr=order,
                     markdown=transform_result.content,
+                    description=description,
                 ),
             )
     except EledoApiError as exc:
@@ -371,6 +381,7 @@ def summarize_results(results: Sequence[SyncFileResult], *, dry_run: bool) -> Sy
         created=sum(1 for result in results if result.action == SyncAction.CREATE),
         updated=sum(1 for result in results if result.action == SyncAction.UPDATE),
         skipped=sum(1 for result in results if result.action == SyncAction.SKIP_UNCHANGED),
+        unpublished=sum(1 for result in results if result.action == SyncAction.UNPUBLISH),
         warnings=sum(1 for result in results if result.status == SyncStatus.WARNING),
         failures=sum(1 for result in results if result.status == SyncStatus.FAILURE),
         dry_run=dry_run,
@@ -421,7 +432,7 @@ def _discover_files(selection: Path) -> tuple[Path, ...]:
 
 
 def _is_document_file(path: Path) -> bool:
-    return path.is_file() and path.suffix.lower() in DOC_EXTENSIONS
+    return path.is_file() and path.suffix.lower() in _DOC_EXTENSIONS
 
 
 def _destination_segments(destination_root: str) -> tuple[str, ...]:
@@ -472,12 +483,58 @@ def _validate_unique_targets(items: Sequence[SyncItem]) -> None:
 
 
 def _metadata_title(metadata: Mapping[str, FrontmatterValue], item: SyncItem) -> str:
+    """Resolve CMS article title from source metadata and file location."""
+    if _is_index_document(item.source_path):
+        category_label = _category_label(item.source_path.parent)
+
+        if category_label is not None:
+            return category_label
+
+        return _title_from_slug(item.target_segments[-1])
+
     value = metadata.get("title")
 
-    if isinstance(value, str) and value.strip():
-        return value.strip()
+    if isinstance(value, str):
+        title = value.strip()
+
+        if title:
+            return title
 
     return _title_from_slug(item.target_segments[-1])
+
+
+def _is_index_document(path: Path) -> bool:
+    """Return whether the source document is an index document."""
+    return path.stem == "index" and path.suffix in {".md", ".mdx"}
+
+
+def _category_label(directory: Path) -> str | None:
+    """Read Docusaurus category label from _category_.yml when available."""
+    for filename in _CATEGORY_FILENAMES:
+        path = directory / filename
+
+        if not path.is_file():
+            continue
+
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        label = data.get("label")
+
+        if not isinstance(label, str):
+            return None
+
+        label = label.strip()
+
+        if label:
+            return label
+
+    return None
 
 
 def _metadata_order(metadata: Mapping[str, FrontmatterValue]) -> int | None:
@@ -487,6 +544,21 @@ def _metadata_order(metadata: Mapping[str, FrontmatterValue]) -> int | None:
         return value
 
     return None
+
+
+def _metadata_description(metadata: Mapping[str, FrontmatterValue]) -> str | None:
+    """Return SEO description from frontmatter, if present."""
+    value = metadata.get("description")
+
+    if not isinstance(value, str):
+        return None
+
+    description = value.strip()
+
+    if description == "":
+        return None
+
+    return description
 
 
 def _title_from_slug(slug: str) -> str:
@@ -499,14 +571,33 @@ def _is_unchanged(
     markdown: str,
     title: str,
     order: int | None,
+    description: str | None,
 ) -> bool:
-    if existing.article.markdown != markdown:
+    existing_markdown = existing.article.markdown or ""
+
+    if existing_markdown != markdown:
         return False
 
     if existing.article.title != title:
         return False
 
-    return not (order is not None and existing.article.ordr != order)
+    if order is not None and existing.article.ordr != order:
+        return False
+
+    return _normalize_optional_text(existing.article.description) == description
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    """Normalize optional CMS text fields for comparison."""
+    if value is None:
+        return None
+
+    normalized = value.strip()
+
+    if normalized == "":
+        return None
+
+    return normalized
 
 
 def _transform_messages(messages: Sequence[TransformMessage]) -> tuple[SyncMessage, ...]:
@@ -563,7 +654,7 @@ def _is_missing_article_error(exc: EledoApiError) -> bool:
 
 def _result_to_log_record(result: SyncFileResult) -> dict[str, Any]:
     return {
-        "source": result.source_path.as_posix(),
+        "source": str(result.source_path) if result.source_path is not None else "(CMS only)",
         "target": result.target_path,
         "action": result.action.value,
         "status": result.status.value,
@@ -679,3 +770,274 @@ async def _ensure_parent_articles(
             return False
 
     return True
+
+
+def _is_single_file_selection(options: SyncOptions) -> bool:
+    """Return whether the sync selection points to a single file."""
+    return options.selection is not None and options.selection.is_file()
+
+
+def _selection_root_segments(options: SyncOptions) -> tuple[str, ...]:
+    """Return CMS root path for the selected source subtree."""
+    destination_root_segments = _cms_path_segments(options.destination_root)
+
+    if options.selection is None:
+        return destination_root_segments
+
+    selection = options.selection.resolve()
+    source_root = options.source_root.resolve()
+
+    if selection.is_file():
+        return destination_root_segments
+
+    relative_selection = selection.relative_to(source_root)
+
+    return (
+        *destination_root_segments,
+        *(part for part in relative_selection.parts if part),
+    )
+
+
+def _source_tree_contains_path(
+    *,
+    source_paths: set[tuple[str, ...]],
+    cms_path: tuple[str, ...],
+) -> bool:
+    """Return whether a CMS path exists in the selected source tree."""
+    for source_path in source_paths:
+        if source_path == cms_path:
+            return True
+
+        if len(source_path) > len(cms_path) and source_path[: len(cms_path)] == cms_path:
+            return True
+
+    return False
+
+
+def _cms_only_failure_result(
+    *,
+    target_segments: tuple[str, ...],
+    dry_run: bool,
+    code: str,
+    message: str,
+) -> SyncFileResult:
+    """Build a failure result for a CMS-only operation."""
+    return SyncFileResult(
+        source_path=None,
+        target_path=_target_path(target_segments),
+        action=SyncAction.FAILED,
+        status=SyncStatus.FAILURE,
+        dry_run=dry_run,
+        uploaded=False,
+        title=None,
+        order=None,
+        messages=(
+            SyncMessage(
+                level=TransformMessageLevel.ERROR.value,
+                code=code,
+                message=message,
+            ),
+        ),
+    )
+
+
+async def sync_missing_cms_children(
+    *,
+    cms: CmsClient,
+    items: Sequence[SyncItem],
+    options: SyncOptions,
+) -> tuple[SyncFileResult, ...]:
+    """Unpublish CMS children that are no longer present in the selected source tree."""
+    if not options.unpublish_missing:
+        return ()
+
+    if _is_single_file_selection(options):
+        return ()
+
+    if not items:
+        return ()
+
+    root_segments = _selection_root_segments(options)
+    source_paths = {item.target_segments for item in items}
+
+    return await _reconcile_cms_children(
+        cms=cms,
+        parent_segments=root_segments,
+        source_paths=source_paths,
+        options=options,
+    )
+
+
+async def _reconcile_cms_children(
+    *,
+    cms: CmsClient,
+    parent_segments: tuple[str, ...],
+    source_paths: set[tuple[str, ...]],
+    options: SyncOptions,
+) -> tuple[SyncFileResult, ...]:
+    """Compare CMS children with source tree and unpublish stale CMS branches."""
+    try:
+        parent_response = await cms.retrieve_article(parent_segments)
+    except EledoApiError as exc:
+        if _is_missing_article_error(exc):
+            return ()
+
+        return (
+            _cms_only_failure_result(
+                target_segments=parent_segments,
+                dry_run=options.dry_run,
+                code="cms_reconcile_failed",
+                message=str(exc),
+            ),
+        )
+    except EledoInvalidResponseError as exc:
+        return (
+            _cms_only_failure_result(
+                target_segments=parent_segments,
+                dry_run=options.dry_run,
+                code="cms_reconcile_invalid_response",
+                message=str(exc),
+            ),
+        )
+
+    results: list[SyncFileResult] = []
+
+    for child in parent_response.children:
+        child_segments = (*parent_segments, child.slug)
+
+        if _source_tree_contains_path(source_paths=source_paths, cms_path=child_segments):
+            results.extend(
+                await _reconcile_cms_children(
+                    cms=cms,
+                    parent_segments=child_segments,
+                    source_paths=source_paths,
+                    options=options,
+                )
+            )
+            continue
+
+        results.extend(
+            await _unpublish_cms_subtree(
+                cms=cms,
+                target_segments=child_segments,
+                options=options,
+            )
+        )
+
+    return tuple(results)
+
+
+async def _unpublish_cms_subtree(
+    *,
+    cms: CmsClient,
+    target_segments: tuple[str, ...],
+    options: SyncOptions,
+) -> tuple[SyncFileResult, ...]:
+    """Unpublish a stale CMS article and all of its children."""
+    try:
+        response = await cms.retrieve_article(target_segments)
+    except EledoApiError as exc:
+        return (
+            _cms_only_failure_result(
+                target_segments=target_segments,
+                dry_run=options.dry_run,
+                code="cms_unpublish_retrieve_failed",
+                message=str(exc),
+            ),
+        )
+    except EledoInvalidResponseError as exc:
+        return (
+            _cms_only_failure_result(
+                target_segments=target_segments,
+                dry_run=options.dry_run,
+                code="cms_unpublish_invalid_response",
+                message=str(exc),
+            ),
+        )
+
+    article = response.article
+    results: list[SyncFileResult] = []
+
+    message_code = "cms_child_would_be_unpublished" if options.dry_run else "cms_child_unpublished"
+    message_text = (
+        f"CMS article {_target_path(target_segments)} exists in CMS but not in the selected "
+        "source tree; it will be unpublished."
+        if options.dry_run
+        else f"CMS article {_target_path(target_segments)} exists in CMS but not in the selected "
+        "source tree; it was unpublished."
+    )
+
+    if options.dry_run:
+        results.append(
+            SyncFileResult(
+                source_path=None,
+                target_path=_target_path(target_segments),
+                action=SyncAction.UNPUBLISH,
+                status=SyncStatus.WARNING,
+                dry_run=True,
+                uploaded=False,
+                title=article.title,
+                order=article.ordr,
+                messages=(
+                    SyncMessage(
+                        level=TransformMessageLevel.WARNING.value,
+                        code=message_code,
+                        message=message_text,
+                    ),
+                ),
+            )
+        )
+    else:
+        try:
+            await cms.update_article(
+                path=target_segments,
+                label=options.tag,
+                request=CmsArticleUpdateRequest(
+                    title=article.title,
+                    slug=article.slug,
+                    markdown=article.markdown or "",
+                    ordr=article.ordr,
+                    description=article.description,
+                    published=False,
+                ),
+            )
+        except EledoApiError as exc:
+            results.append(
+                _cms_only_failure_result(
+                    target_segments=target_segments,
+                    dry_run=False,
+                    code="cms_unpublish_failed",
+                    message=str(exc),
+                )
+            )
+        else:
+            results.append(
+                SyncFileResult(
+                    source_path=None,
+                    target_path=_target_path(target_segments),
+                    action=SyncAction.UNPUBLISH,
+                    status=SyncStatus.WARNING,
+                    dry_run=False,
+                    uploaded=True,
+                    title=article.title,
+                    order=article.ordr,
+                    messages=(
+                        SyncMessage(
+                            level=TransformMessageLevel.WARNING.value,
+                            code=message_code,
+                            message=message_text,
+                        ),
+                    ),
+                )
+            )
+
+    for child in response.children:
+        results.extend(
+            await _unpublish_cms_subtree(
+                cms=cms,
+                target_segments=(*target_segments, child.slug),
+                options=options,
+            )
+        )
+
+    return tuple(results)

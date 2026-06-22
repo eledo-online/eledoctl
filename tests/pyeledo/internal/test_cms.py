@@ -13,6 +13,7 @@ from pyeledo.internal.cms import (
     article_path,
     build_create_article_payload,
     build_update_article_payload,
+    parse_article,
 )
 
 
@@ -49,6 +50,7 @@ def test_build_create_article_payload_uses_ord() -> None:
         "slug": "make_com",
         "ord": 10,
         "markdown": "## make.com guides\n - version 4",
+        "description": None,
     }
 
 
@@ -65,6 +67,7 @@ def test_build_create_article_payload_omits_missing_ord() -> None:
         "title": "Make Guides",
         "slug": "make_com",
         "markdown": "content",
+        "description": None,
     }
 
 
@@ -83,6 +86,7 @@ def test_build_update_article_payload_uses_ordr() -> None:
         "slug": "make_com",
         "ordr": 10,
         "markdown": "## make.com guides\n - version 4",
+        "description": None,
     }
 
 
@@ -122,6 +126,7 @@ async def test_create_article_posts_to_articles_api(mock_transport) -> None:
         "slug": "make_com",
         "ord": 10,
         "markdown": "## make.com guides\n - version 4",
+        "description": None,
     }
     assert result == {"ok": True}
 
@@ -162,6 +167,7 @@ async def test_update_article_puts_to_articles_api(mock_transport) -> None:
         "slug": "make_com",
         "ordr": 10,
         "markdown": "## make.com guides\n - version 4",
+        "description": None,
     }
     assert result == {"updated": True}
 
@@ -287,3 +293,44 @@ async def test_write_response_may_be_empty(mock_transport) -> None:
         )
 
     assert result == {}
+
+
+def test_parse_article_allows_null_markdown() -> None:
+    article = parse_article(
+        {
+            "id": "article-1",
+            "version": 1,
+            "title": "Download",
+            "slug": "download",
+            "parentId": None,
+            "ordr": 4,
+            "published": False,
+            "platform": None,
+            "nomenu": False,
+            "index": False,
+            "description": None,
+            "markdown": None,
+        }
+    )
+
+    assert article.markdown is None
+
+
+def test_parse_article_rejects_invalid_markdown_type() -> None:
+    with pytest.raises(EledoInvalidResponseError):
+        parse_article(
+            {
+                "id": "article-1",
+                "version": 1,
+                "title": "Download",
+                "slug": "download",
+                "parentId": None,
+                "ordr": 4,
+                "published": False,
+                "platform": None,
+                "nomenu": False,
+                "index": False,
+                "description": None,
+                "markdown": 123,
+            }
+        )

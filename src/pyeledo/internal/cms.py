@@ -21,6 +21,7 @@ class CmsArticleCreateRequest:
     slug: str
     markdown: str
     ord: int | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,8 @@ class CmsArticleUpdateRequest:
     slug: str
     markdown: str
     ordr: int | None = None
+    description: str | None = None
+    published: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +51,7 @@ class CmsArticle:
     nomenu: bool
     index: bool
     description: str | None
-    markdown: str
+    markdown: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +143,7 @@ def build_create_article_payload(request: CmsArticleCreateRequest) -> JsonObject
         "title": request.title,
         "slug": request.slug,
         "markdown": request.markdown,
+        "description": request.description,
     }
 
     if request.ord is not None:
@@ -154,10 +158,14 @@ def build_update_article_payload(request: CmsArticleUpdateRequest) -> JsonObject
         "title": request.title,
         "slug": request.slug,
         "markdown": request.markdown,
+        "description": request.description,
     }
 
     if request.ordr is not None:
         payload["ordr"] = request.ordr
+
+    if request.published is not None:
+        payload["published"] = request.published
 
     return payload
 
@@ -198,7 +206,7 @@ def parse_article(data: JsonObject) -> CmsArticle:
         nomenu=_required_bool(data, "nomenu", "article"),
         index=_required_bool(data, "index", "article"),
         description=_optional_string(data, "description", "article"),
-        markdown=_required_string(data, "markdown", "article"),
+        markdown=_optional_string(data, "markdown", "article"),
     )
 
 

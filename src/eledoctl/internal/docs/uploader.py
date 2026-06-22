@@ -220,6 +220,7 @@ async def sync_one_document(
 
     title = _metadata_title(transform_result.metadata, item)
     order = _metadata_order(transform_result.metadata)
+    description = _metadata_description(transform_result.metadata)
 
     if transform_result.status == TransformStatus.FAILURE:
         return SyncFileResult(
@@ -242,6 +243,7 @@ async def sync_one_document(
             markdown=transform_result.content,
             title=title,
             order=order,
+            description=description,
         )
     ):
         return SyncFileResult(
@@ -306,6 +308,7 @@ async def sync_one_document(
                     slug=item.target_segments[-1],
                     ord=order,
                     markdown=transform_result.content,
+                    description=description,
                 ),
             )
         else:
@@ -317,6 +320,7 @@ async def sync_one_document(
                     slug=item.target_segments[-1],
                     ordr=order,
                     markdown=transform_result.content,
+                    description=description,
                 ),
             )
     except EledoApiError as exc:
@@ -488,6 +492,20 @@ def _metadata_order(metadata: Mapping[str, FrontmatterValue]) -> int | None:
 
     return None
 
+def _metadata_description(metadata: Mapping[str, FrontmatterValue]) -> str | None:
+    """Return SEO description from frontmatter, if present."""
+    value = metadata.get("description")
+
+    if not isinstance(value, str):
+        return None
+
+    description = value.strip()
+
+    if description == "":
+        return None
+
+    return description
+
 
 def _title_from_slug(slug: str) -> str:
     return slug.replace("-", " ").replace("_", " ").strip().title()
@@ -499,6 +517,7 @@ def _is_unchanged(
     markdown: str,
     title: str,
     order: int | None,
+    description: str | None,
 ) -> bool:
     existing_markdown = existing.article.markdown or ""
     
@@ -508,7 +527,25 @@ def _is_unchanged(
     if existing.article.title != title:
         return False
 
-    return not (order is not None and existing.article.ordr != order)
+    if order is not None and existing.article.ordr != order:
+        return False
+
+    if _normalize_optional_text(existing.article.description) != description:
+        return False
+
+    return True
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    """Normalize optional CMS text fields for comparison."""
+    if value is None:
+        return None
+
+    normalized = value.strip()
+
+    if normalized == "":
+        return None
+
+    return normalized
 
 
 def _transform_messages(messages: Sequence[TransformMessage]) -> tuple[SyncMessage, ...]:

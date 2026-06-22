@@ -21,6 +21,7 @@ class CmsArticleCreateRequest:
     slug: str
     markdown: str
     ord: int | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,7 @@ class CmsArticleUpdateRequest:
     slug: str
     markdown: str
     ordr: int | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +142,7 @@ def build_create_article_payload(request: CmsArticleCreateRequest) -> JsonObject
         "title": request.title,
         "slug": request.slug,
         "markdown": request.markdown,
+        "description": request.description,
     }
 
     if request.ord is not None:
@@ -154,6 +157,7 @@ def build_update_article_payload(request: CmsArticleUpdateRequest) -> JsonObject
         "title": request.title,
         "slug": request.slug,
         "markdown": request.markdown,
+        "description": request.description,
     }
 
     if request.ordr is not None:

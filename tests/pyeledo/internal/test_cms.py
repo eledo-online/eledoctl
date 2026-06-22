@@ -50,6 +50,7 @@ def test_build_create_article_payload_uses_ord() -> None:
         "slug": "make_com",
         "ord": 10,
         "markdown": "## make.com guides\n - version 4",
+        "description": None,
     }
 
 
@@ -66,6 +67,7 @@ def test_build_create_article_payload_omits_missing_ord() -> None:
         "title": "Make Guides",
         "slug": "make_com",
         "markdown": "content",
+        "description": None,
     }
 
 
@@ -84,6 +86,7 @@ def test_build_update_article_payload_uses_ordr() -> None:
         "slug": "make_com",
         "ordr": 10,
         "markdown": "## make.com guides\n - version 4",
+        "description": None,
     }
 
 
@@ -123,6 +126,7 @@ async def test_create_article_posts_to_articles_api(mock_transport) -> None:
         "slug": "make_com",
         "ord": 10,
         "markdown": "## make.com guides\n - version 4",
+        "description": None,
     }
     assert result == {"ok": True}
 
@@ -163,6 +167,7 @@ async def test_update_article_puts_to_articles_api(mock_transport) -> None:
         "slug": "make_com",
         "ordr": 10,
         "markdown": "## make.com guides\n - version 4",
+        "description": None,
     }
     assert result == {"updated": True}
 

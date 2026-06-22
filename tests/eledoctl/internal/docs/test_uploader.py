@@ -114,8 +114,9 @@ def cms_response(
     *,
     title: str,
     slug: str,
-    markdown: str,
-    ordr: int,
+    markdown: str | None,
+    ordr: int | None = None,
+    description: str | None = None,
 ) -> CmsArticleRetrieveResponse:
     return CmsArticleRetrieveResponse(
         article=CmsArticle(
@@ -129,7 +130,7 @@ def cms_response(
             platform=None,
             nomenu=False,
             index=False,
-            description=None,
+            description=description,
             markdown=markdown,
         ),
         children=(),
@@ -797,3 +798,47 @@ async def test_sync_one_document_creates_missing_intermediate_parents(tmp_path: 
         "",
         "# Download\n",
     ]
+
+
+@pytest.mark.asyncio
+async def test_sync_one_document_updates_when_description_changes(tmp_path: Path) -> None:
+    root = tmp_path / "docs"
+
+    write_file(
+        root / "api" / "authentication.mdx",
+        (
+            "---\n"
+            "title: Authentication\n"
+            "sidebar_position: 2\n"
+            "description: New SEO description.\n"
+            "---\n\n"
+            "# Authentication\n"
+        ),
+    )
+
+    plan = build_sync_plan(sync_options(root))
+    item = plan.items[0]
+
+    cms = FakeCmsClient(
+        existing={
+            item.target_segments: cms_response(
+                title="Authentication",
+                slug="authentication",
+                markdown="# Authentication\n",
+                ordr=2,
+                description="Old SEO description.",
+            ),
+        }
+    )
+
+    result = await sync_one_document(
+        cms=cms,
+        item=item,
+        options=sync_options(root),
+    )
+
+    assert result.action == SyncAction.UPDATE
+    assert result.uploaded is True
+    assert cms.created == []
+    assert len(cms.updated) == 1
+    assert cms.updated[0]["request"].description == "New SEO description."

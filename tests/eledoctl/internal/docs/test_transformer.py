@@ -573,3 +573,69 @@ def test_reference_images_warn_when_reference_contains_removed_source_image() ->
 
     assert len(result.messages) == 1
     assert result.messages[0].code == "reference_urls_not_in_source"
+
+
+def test_reference_links_patch_null_url_with_article_id_suffix() -> None:
+    result = transform_document(
+        source_doc="Read [Authentication](./authentication.mdx).\n",
+        reference_doc="Read [Authentication](null){6a3810d171e935939fd17c49}.\n",
+        options=options_only(patch_links_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.SUCCESS
+    assert result.content == "Read [Authentication](null){6a3810d171e935939fd17c49}.\n"
+    assert result.messages == ()
+
+
+def test_reference_links_patch_normal_url_with_article_id_suffix() -> None:
+    result = transform_document(
+        source_doc="Read [Authentication](./authentication.mdx).\n",
+        reference_doc=("Read [Authentication](/documentation/authentication){6a3810d171e935939fd17c49}.\n"),
+        options=options_only(patch_links_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.SUCCESS
+    assert result.content == ("Read [Authentication](/documentation/authentication){6a3810d171e935939fd17c49}.\n")
+    assert result.messages == ()
+
+
+def test_reference_links_preserve_formatted_source_label_with_article_id_suffix() -> None:
+    result = transform_document(
+        source_doc="Read [**Authentication**](./authentication.mdx).\n",
+        reference_doc=("Read [Authentication](/documentation/authentication){6a3810d171e935939fd17c49}.\n"),
+        options=options_only(patch_links_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.SUCCESS
+    assert result.content == ("Read [**Authentication**](/documentation/authentication){6a3810d171e935939fd17c49}.\n")
+    assert result.messages == ()
+
+
+def test_reference_links_without_article_id_suffix_still_work() -> None:
+    result = transform_document(
+        source_doc="Read [Authentication](./authentication.mdx).\n",
+        reference_doc="Read [Authentication](/documentation/authentication).\n",
+        options=options_only(patch_links_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.SUCCESS
+    assert result.content == "Read [Authentication](/documentation/authentication).\n"
+    assert result.messages == ()
+
+
+def test_duplicate_reference_links_with_article_id_suffix_are_patched_by_position() -> None:
+    result = transform_document(
+        source_doc=("Read [Authentication](./old-auth.mdx).\nRead [Authentication](./new-auth.mdx).\n"),
+        reference_doc=(
+            "Read [Authentication](/documentation/old-auth){old123}.\n"
+            "Read [Authentication](/documentation/new-auth){new456}.\n"
+        ),
+        options=options_only(patch_links_from_reference=True),
+    )
+
+    assert result.status == TransformStatus.SUCCESS
+    assert result.content == (
+        "Read [Authentication](/documentation/old-auth){old123}.\n"
+        "Read [Authentication](/documentation/new-auth){new456}.\n"
+    )
+    assert result.messages == ()

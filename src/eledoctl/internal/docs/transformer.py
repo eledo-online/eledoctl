@@ -40,7 +40,12 @@ _JSX_ATTRIBUTE_RE = re.compile(
     re.DOTALL,
 )
 
-_MARKDOWN_URL_RE = re.compile(r"(?P<image>!)?\[(?P<label>(?:\\.|[^\]\\])*)\]\((?P<url>[^)\n]+)\)")
+_MARKDOWN_URL_RE = re.compile(
+    r"(?P<image>!)?"
+    r"\[(?P<label>(?:\\.|[^\]\\])*)\]"
+    r"\((?P<url>[^)\n]+)\)"
+    r"(?P<article_id_suffix>\{[^{}\s]+\})?"
+)
 
 type _MarkdownReferenceKey = tuple[str, str]
 
@@ -108,10 +113,17 @@ class _MarkdownReference:
     kind: str
     label: str
     url: str
+    article_id_suffix: str | None = None
 
     @property
     def key(self) -> _MarkdownReferenceKey:
-        return self.kind, self.label
+        return self.kind, _normalize_markdown_reference_label(self.label)
+
+
+@dataclass(frozen=True, slots=True)
+class _MarkdownReferencePatch:
+    url: str
+    article_id_suffix: str | None = None
 
 
 def transform_document(
@@ -459,7 +471,7 @@ def _patch_from_reference(
     )
 
     source_counts = Counter(reference.key for reference in source_references)
-    reference_groups = _group_reference_urls(reference_references)
+    reference_groups = _group_reference_patches(reference_references)
 
     source_keys = set(source_counts)
     reference_keys = set(reference_groups)
@@ -477,28 +489,24 @@ def _patch_from_reference(
             )
         )
 
-    direct_url_map: dict[_MarkdownReferenceKey, str] = {}
-    positional_url_map: dict[_MarkdownReferenceKey, tuple[str, ...]] = {}
-    blocked_keys: set[_MarkdownReferenceKey] = set()
+    direct_patch_map: dict[_MarkdownReferenceKey, _MarkdownReferencePatch] = {}
+    positional_patch_map: dict[_MarkdownReferenceKey, tuple[_MarkdownReferencePatch, ...]] = {}
     missing_keys: set[_MarkdownReferenceKey] = set()
 
     for key, source_count in source_counts.items():
-        reference_urls = reference_groups.get(key)
+        reference_patches = reference_groups.get(key)
 
-        if reference_urls is None:
+        if reference_patches is None:
             missing_keys.add(key)
-            blocked_keys.add(key)
             continue
 
-        if source_count == 1 and len(reference_urls) == 1:
-            direct_url_map[key] = reference_urls[0]
+        if source_count == 1 and len(reference_patches) == 1:
+            direct_patch_map[key] = reference_patches[0]
             continue
 
-        if source_count == len(reference_urls):
-            positional_url_map[key] = reference_urls
+        if source_count == len(reference_patches):
+            positional_patch_map[key] = reference_patches
             continue
-
-        blocked_keys.add(key)
 
         kind, label = key
         messages.append(
@@ -506,8 +514,9 @@ def _patch_from_reference(
                 level=TransformMessageLevel.WARNING,
                 code="ambiguous_reference_url_count_mismatch",
                 message=(
-                    f"Reference document contains {len(reference_urls)} {kind} URL(s) for label {label!r}, "
-                    f"but source document contains {source_count}; skipped this mapping."
+                    f"Reference document contains {len(reference_patches)} {kind} URL(s) "
+                    f"for label {label!r}, but source document contains {source_count}; "
+                    "skipped this mapping."
                 ),
             )
         )
@@ -525,17 +534,20 @@ def _patch_from_reference(
 
         key = markdown_reference.key
 
-        reference_url = direct_url_map.get(key)
-        if reference_url is not None:
-            return _format_markdown_reference(markdown_reference, reference_url)
+        direct_patch = direct_patch_map.get(key)
+        if direct_patch is not None:
+            return _format_markdown_reference(markdown_reference, direct_patch)
 
-        positional_urls = positional_url_map.get(key)
-        if positional_urls is not None:
+        positional_patches = positional_patch_map.get(key)
+        if positional_patches is not None:
             occurrence_index = occurrence_counter[key]
             occurrence_counter[key] += 1
 
-            if occurrence_index < len(positional_urls):
-                return _format_markdown_reference(markdown_reference, positional_urls[occurrence_index])
+            if occurrence_index < len(positional_patches):
+                return _format_markdown_reference(
+                    markdown_reference,
+                    positional_patches[occurrence_index],
+                )
 
             return match.group(0)
 
@@ -601,27 +613,55 @@ def _markdown_reference_from_match(match: re.Match[str]) -> _MarkdownReference:
         kind="image" if match.group("image") else "link",
         label=match.group("label"),
         url=match.group("url"),
+        article_id_suffix=match.group("article_id_suffix"),
     )
 
 
-def _group_reference_urls(
+def _group_reference_patches(
     references: Sequence[_MarkdownReference],
-) -> dict[_MarkdownReferenceKey, tuple[str, ...]]:
-    """Group reference URLs by Markdown reference key while preserving order."""
-    grouped: defaultdict[_MarkdownReferenceKey, list[str]] = defaultdict(list)
+) -> dict[_MarkdownReferenceKey, tuple[_MarkdownReferencePatch, ...]]:
+    """Group reference URL patches by Markdown reference key while preserving order."""
+    grouped: defaultdict[_MarkdownReferenceKey, list[_MarkdownReferencePatch]] = defaultdict(list)
 
     for reference in references:
-        grouped[reference.key].append(reference.url)
+        grouped[reference.key].append(
+            _MarkdownReferencePatch(
+                url=reference.url,
+                article_id_suffix=reference.article_id_suffix,
+            )
+        )
 
-    return {key: tuple(urls) for key, urls in grouped.items()}
+    return {key: tuple(patches) for key, patches in grouped.items()}
 
 
-def _format_markdown_reference(reference: _MarkdownReference, url: str) -> str:
-    """Render a Markdown link or image with a patched URL."""
+def _format_markdown_reference(
+    reference: _MarkdownReference,
+    patch: _MarkdownReferencePatch,
+) -> str:
+    """Render a Markdown link or image with a patched URL and optional article ID suffix."""
+    suffix = patch.article_id_suffix if patch.article_id_suffix is not None else reference.article_id_suffix
+    suffix = suffix or ""
+
     if reference.kind == "image":
-        return f"![{reference.label}]({url})"
+        return f"![{reference.label}]({patch.url}){suffix}"
 
-    return f"[{reference.label}]({url})"
+    return f"[{reference.label}]({patch.url}){suffix}"
+
+
+def _normalize_markdown_reference_label(label: str) -> str:
+    """Normalize a Markdown reference label for matching while preserving render labels."""
+    text = re.sub(r"\\(.)", r"\1", label.strip())
+
+    previous = None
+
+    while text != previous:
+        previous = text
+
+        for marker in ("**", "__", "`", "*", "_"):
+            if text.startswith(marker) and text.endswith(marker) and len(text) > len(marker) * 2:
+                text = text[len(marker) : -len(marker)].strip()
+
+    return text
 
 
 def _format_missing_reference_urls_message(

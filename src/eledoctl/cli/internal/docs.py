@@ -30,12 +30,7 @@ from pyeledo.internal.cms import CmsClient
 _TRANSFORM_OPTION_NAMES = {field.name.replace("_", "-"): field.name for field in fields(TransformOptions)}
 
 
-@click.group("internal")
-def internal_group() -> None:
-    """Internal Eledo operational tooling."""
-
-
-@internal_group.group("docs")
+@click.group("docs")
 def internal_docs_group() -> None:
     """Internal documentation synchronization tooling."""
 

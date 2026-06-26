@@ -5,7 +5,7 @@ from __future__ import annotations
 import click
 
 from eledoctl.cli.documents import documents_group
-from eledoctl.cli.internal.docs import internal_group
+from eledoctl.cli.internal.root import internal_group
 from eledoctl.cli.login import login
 from eledoctl.cli.profile import profile
 from eledoctl.cli.templates import templates

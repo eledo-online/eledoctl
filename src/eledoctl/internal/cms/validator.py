@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +16,8 @@ _MARKDOWN_REFERENCE_RE = re.compile(
     r"\((?P<url>[^)\n]+)\)"
     r"(?P<article_id_suffix>\{[^{}\s]+})?"
 )
+
+type CmsValidationProgressCallback = Callable[[tuple[str, ...], int], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +50,7 @@ async def validate_cms_tree(
     *,
     cms: CmsClient,
     remote_path: str,
+    progress_callback: CmsValidationProgressCallback | None = None,
 ) -> CmsValidationResult:
     """Validate CMS articles for suspicious leftover Docusaurus references."""
     target_segments = _cms_path_segments(remote_path)
@@ -55,6 +58,7 @@ async def validate_cms_tree(
     checked_articles, warnings = await _validate_cms_subtree(
         cms=cms,
         target_segments=target_segments,
+        progress_callback=progress_callback,
     )
 
     return CmsValidationResult(
@@ -101,11 +105,15 @@ async def _validate_cms_subtree(
     *,
     cms: CmsClient,
     target_segments: tuple[str, ...],
+    progress_callback: CmsValidationProgressCallback | None,
 ) -> tuple[int, tuple[CmsValidationWarning, ...]]:
     """Validate one CMS article and recurse into its children."""
     try:
         response = await cms.retrieve_article(target_segments)
     except (EledoApiError, EledoInvalidResponseError) as exc:
+        if progress_callback is not None:
+            progress_callback(target_segments, 0)
+
         return (
             0,
             (
@@ -116,6 +124,9 @@ async def _validate_cms_subtree(
                 ),
             ),
         )
+
+    if progress_callback is not None:
+        progress_callback(target_segments, len(response.children))
 
     warnings = list(
         validate_cms_markdown(
@@ -129,6 +140,7 @@ async def _validate_cms_subtree(
         child_checked_articles, child_warnings = await _validate_cms_subtree(
             cms=cms,
             target_segments=(*target_segments, child.slug),
+            progress_callback=progress_callback,
         )
 
         checked_articles += child_checked_articles

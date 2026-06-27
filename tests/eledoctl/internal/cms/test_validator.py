@@ -175,3 +175,71 @@ async def test_validate_cms_tree_reports_read_problem_as_warning() -> None:
     assert result.warning_count == 1
     assert result.warnings[0].target_path == "/documentation/missing"
     assert result.warnings[0].code == "cms_article_read_warning"
+
+
+@pytest.mark.asyncio
+async def test_validate_cms_tree_reports_progress_for_checked_articles() -> None:
+    cms = FakeCmsClient(
+        existing={
+            ("documentation",): cms_response(
+                title="Documentation",
+                slug="documentation",
+                markdown="# Documentation\n",
+                children=(
+                    cms_child(slug="api"),
+                    cms_child(slug="product"),
+                ),
+            ),
+            ("documentation", "api"): cms_response(
+                title="Api",
+                slug="api",
+                markdown="# API\n",
+            ),
+            ("documentation", "product"): cms_response(
+                title="Product",
+                slug="product",
+                markdown="# Product\n",
+            ),
+        }
+    )
+
+    progress_events: list[tuple[tuple[str, ...], int]] = []
+
+    result = await validate_cms_tree(
+        cms=cms,  # type: ignore[arg-type]
+        remote_path="documentation",
+        progress_callback=lambda target_segments, discovered_children: progress_events.append(
+            (target_segments, discovered_children)
+        ),
+    )
+
+    assert result.checked_articles == 3
+    assert result.warning_count == 0
+
+    assert progress_events == [
+        (("documentation",), 2),
+        (("documentation", "api"), 0),
+        (("documentation", "product"), 0),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_validate_cms_tree_reports_progress_for_read_warning() -> None:
+    cms = FakeCmsClient(existing={})
+    progress_events: list[tuple[tuple[str, ...], int]] = []
+
+    result = await validate_cms_tree(
+        cms=cms,  # type: ignore[arg-type]
+        remote_path="documentation/missing",
+        progress_callback=lambda target_segments, discovered_children: progress_events.append(
+            (target_segments, discovered_children)
+        ),
+    )
+
+    assert result.checked_articles == 0
+    assert result.warning_count == 1
+    assert result.warnings[0].code == "cms_article_read_warning"
+
+    assert progress_events == [
+        (("documentation", "missing"), 0),
+    ]

@@ -44,12 +44,13 @@ class PullAction(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PullResult:
-    source_path: Path
+    source_path: Path | None
     target_path: str
     action: PullAction
     dry_run: bool
     written: bool
     messages: tuple[str, ...] = ()
+    error_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,7 @@ class PullSummary:
     updated: int
     unchanged: int
     failed: int
+    cms_only: int
     dry_run: bool
 
 
@@ -382,10 +384,11 @@ async def pull_one_document(*, cms: CmsClient, item: SyncItem, dry_run: bool) ->
 
 def summarize_pull(results: Sequence[PullResult], *, dry_run: bool) -> PullSummary:
     return PullSummary(
-        total=len(results),
+        total=sum(x.source_path is not None for x in results),
         updated=sum(x.action == PullAction.UPDATED for x in results),
         unchanged=sum(x.action == PullAction.UNCHANGED for x in results),
         failed=sum(x.action == PullAction.FAILED for x in results),
+        cms_only=sum(x.error_code == "cms_only_article" for x in results),
         dry_run=dry_run,
     )
 
@@ -396,7 +399,7 @@ def write_pull_log(path: Path, results: Sequence[PullResult]) -> None:
     with path.open("w", encoding="utf-8") as output:
         for result in results:
             record = asdict(result)
-            record["source_path"] = str(result.source_path)
+            record["source_path"] = str(result.source_path) if result.source_path is not None else None
             record["action"] = result.action.value
             record["status"] = "failure" if result.action == PullAction.FAILED else "success"
             output.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
